@@ -1,0 +1,32 @@
+# Fly.io configuration for azar_chat signaling + matchmaking server.
+# Generated from azar_chat/server/Dockerfile.
+# Deploy: cd server && fly launch --no-deploy   (first time)
+#         fly deploy
+
+app = "azar-chat-server"
+primary_region = "fra"   # Frankfurt — closest to TR; change if you prefer ams/lhr.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "9090"
+  HOST = "0.0.0.0"
+
+[http_service]
+  internal_port = 9090
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

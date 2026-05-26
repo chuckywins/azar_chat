@@ -1,0 +1,17 @@
+{
+  "name": "azar-chat-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Azar-style random video chat signaling + matchmaking server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

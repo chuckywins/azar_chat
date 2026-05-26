@@ -1,0 +1,44 @@
+# Flutter
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/.pub-cache/
+app/.pub/
+app/build/
+app/.idea/
+app/*.iml
+app/.gradle/
+app/android/.gradle/
+app/android/captures/
+app/android/local.properties
+app/android/key.properties
+app/android/**/GeneratedPluginRegistrant*
+app/android/app/debug
+app/android/app/profile
+app/android/app/release
+app/ios/Pods/
+app/ios/.symlinks/
+app/ios/Flutter/App.framework
+app/ios/Flutter/Flutter.framework
+app/ios/Flutter/Generated.xcconfig
+app/ios/Flutter/ephemeral/
+app/ios/Flutter/app.flx
+app/ios/Flutter/app.zip
+app/ios/Flutter/flutter_assets/
+app/ios/ServiceDefinitions.json
+app/ios/Runner/GeneratedPluginRegistrant.*
+
+# Node
+server/node_modules/
+server/npm-debug.log
+server/.env
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
