@@ -1,0 +1,28 @@
+name: Deploy signaling server to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'infra/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:    # manuel tetikleme: Actions sekmesinden "Run workflow"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: SSH into VPS and run update script
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          command_timeout: 4m
+          script: |
+            set -e
+            bash /opt/azar_chat/infra/vps-update.sh
