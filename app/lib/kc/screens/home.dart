@@ -176,7 +176,7 @@ class _KCHomeState extends State<KCHome> {
                 KCButton(
                   label: 'Eşleş',
                   icon: Icons.videocam_rounded,
-                  onTap: () => ctx.setScreen('matching'),
+                  onTap: () => ctx.startMatch(),
                 ),
               ],
             ),

@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../services/coin_service.dart';
+import '../../services/vip_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
 import '../mock_data.dart';
@@ -14,6 +18,26 @@ class KCStore extends StatefulWidget {
 
 class _KCStoreState extends State<KCStore> {
   String _sel = 'p3';
+  int _coins = 0;
+  StreamSubscription? _coinSub;
+  VipStatus? _vip;
+
+  @override
+  void initState() {
+    super.initState();
+    _coinSub = CoinService.instance.watchBalance().listen((v) {
+      if (mounted) setState(() => _coins = v);
+    });
+    VipService.instance.myStatus().then((v) {
+      if (mounted) setState(() => _vip = v);
+    });
+  }
+
+  @override
+  void dispose() {
+    _coinSub?.cancel();
+    super.dispose();
+  }
 
   KCCoinPack get _pack => kcCoinPacks.firstWhere((p) => p.id == _sel);
 
@@ -63,7 +87,7 @@ class _KCStoreState extends State<KCStore> {
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       const KCDiamond(size: 16),
                       const SizedBox(width: 6),
-                      Text(kcNum(ctx.coins), style: kcSora(14, w: FontWeight.w700)),
+                      Text(kcNum(_coins), style: kcSora(14, w: FontWeight.w700)),
                     ]),
                   ),
                 ],
@@ -104,9 +128,13 @@ class _KCStoreState extends State<KCStore> {
                     ),
                     const SizedBox(height: 18),
                     KCButton(
-                      label: 'VIP Ol · ₺149/ay',
+                      label: _vip?.isVip == true
+                          ? 'VIP aktif${_vip?.expiresAt != null ? " · ${_vip!.expiresAt!.toLocal().toString().substring(0, 10)}" : ""}'
+                          : 'VIP Ol · ₺149/ay',
                       variant: KCButtonVariant.glass,
-                      onTap: () => ctx.toast("VIP'ye hoş geldin 👑"),
+                      onTap: () => ctx.toast(_vip?.isVip == true
+                          ? 'VIP üyeliğin sürüyor 👑'
+                          : 'Ödeme entegrasyonu yakında (Stripe)'),
                     ),
                   ],
                 ),
@@ -202,9 +230,9 @@ class _KCStoreState extends State<KCStore> {
                 clipBehavior: Clip.antiAlias,
                 child: Column(children: [
                   _earnRow(Icons.group_add_rounded, KC.online, 'Arkadaşını davet et', '+50',
-                      () { ctx.addCoins(50); ctx.toast('+50 coin! 🎉'); }),
+                      () => ctx.toast('Davet linkin profilinde')),
                   _earnRow(Icons.bolt_rounded, KC.warning, 'Reklam izle', '+10',
-                      () { ctx.addCoins(10); ctx.toast('+10 coin'); }, last: true),
+                      () => ctx.toast('Reklamlar yakında'), last: true),
                 ]),
               ),
             ),
@@ -228,11 +256,7 @@ class _KCStoreState extends State<KCStore> {
               child: KCButton(
                 label: '${_pack.price} · ${kcNum(_pack.coins)} coin satın al',
                 icon: Icons.diamond_outlined,
-                onTap: () {
-                  final bonus = _pack.bonus != null ? int.tryParse(_pack.bonus!.replaceAll('+', '')) ?? 0 : 0;
-                  ctx.addCoins(_pack.coins + bonus);
-                  ctx.toast('${kcNum(_pack.coins)} coin yüklendi 💎');
-                },
+                onTap: () => ctx.toast('Ödeme entegrasyonu yakında (Stripe)'),
               ),
             ),
           ),

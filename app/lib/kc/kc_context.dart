@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../state/app_controller.dart';
 import 'mock_data.dart';
+import 'real_data.dart';
 
 class KCFilters {
   final String gender;   // 'all' | 'k' | 'e'
@@ -15,11 +17,18 @@ class KCFilters {
 }
 
 /// Mirrors the React ctx — owns coins, filters, partner, friends, toast.
+/// Owns a single AppController instance (real WebRTC) and reflects its phase
+/// into the active screen.
 class KCContext extends ChangeNotifier {
-  KCContext._();
+  KCContext._() {
+    app.addListener(_onAppChange);
+  }
   static final KCContext instance = KCContext._();
 
-  int coins = 1250;
+  /// Real WebRTC / signaling orchestrator.  Shared across all screens.
+  final AppController app = AppController();
+  bool _appBooted = false;
+
   KCFilters filters = const KCFilters();
   KCUser? partner;
   KCUser? chatUser;
@@ -50,11 +59,6 @@ class KCContext extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addCoins(int n) {
-    coins = (coins + n).clamp(0, 1 << 31);
-    notifyListeners();
-  }
-
   void addFriend(KCUser u) {
     if (!friends.any((f) => f.id == u.id)) {
       friends = [...friends, u];
@@ -75,9 +79,62 @@ class KCContext extends ChangeNotifier {
     });
   }
 
+  // ── Real WebRTC bridge ────────────────────────────────────────────────────
+
+  Future<void> startMatch() async {
+    if (!_appBooted) {
+      await app.bootstrap();
+      _appBooted = true;
+    }
+    setScreen('matching');
+    await app.start();
+  }
+
+  Future<void> nextPartner() async {
+    app.next();
+  }
+
+  Future<void> leaveCall() async {
+    await app.leave();
+    setTab('home');
+  }
+
+  void _onAppChange() {
+    // Reflect AppController phase changes into the visible KC screen.
+    switch (app.phase) {
+      case AppPhase.idle:
+        // no-op (leaveCall already routes to home)
+        break;
+      case AppPhase.connecting:
+      case AppPhase.searching:
+        if (activeScreen != 'matching') setScreen('matching');
+        break;
+      case AppPhase.inCall:
+        // Sync partner KCUser shape from real peer info
+        final pid = app.peerId;
+        final pname = app.peerName ?? 'Yabancı';
+        if (pid != null) {
+          partner = kcUserFromConversationRow(peerId: pid, nickname: pname);
+        }
+        if (activeScreen != 'video') setScreen('video');
+        break;
+      case AppPhase.ended:
+        toast('Karşı taraf çıktı');
+        setScreen('home');
+        break;
+      case AppPhase.error:
+        toast(app.errorMessage ?? 'Bağlantı hatası');
+        setScreen('home');
+        break;
+    }
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _toastTimer?.cancel();
+    app.removeListener(_onAppChange);
+    app.dispose();
     super.dispose();
   }
 }
