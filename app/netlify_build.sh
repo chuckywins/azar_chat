@@ -16,7 +16,16 @@ flutter --version
 flutter config --enable-web --no-analytics
 flutter pub get
 
-: "${AZAR_WS_URL:?Set AZAR_WS_URL in Netlify env vars (e.g. wss://azar-chat-server.fly.dev)}"
+: "${AZAR_WS_URL:?Set AZAR_WS_URL in Netlify env vars (e.g. wss://ws.klslog.com)}"
+: "${SUPABASE_URL:?Set SUPABASE_URL in Netlify env vars}"
+: "${SUPABASE_ANON_KEY:?Set SUPABASE_ANON_KEY in Netlify env vars}"
 
-echo "==> Building Flutter web with AZAR_WS_URL=$AZAR_WS_URL"
-flutter build web --release --dart-define=AZAR_WS_URL="$AZAR_WS_URL"
+echo "==> Building Flutter web"
+echo "    AZAR_WS_URL=$AZAR_WS_URL"
+echo "    SUPABASE_URL=$SUPABASE_URL"
+echo "    SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:0:20}..."
+
+flutter build web --release \
+  --dart-define=AZAR_WS_URL="$AZAR_WS_URL" \
+  --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+  --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
