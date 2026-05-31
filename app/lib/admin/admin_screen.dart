@@ -7,7 +7,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../auth/auth_controller.dart';
 import '../theme.dart';
 import 'admin_repo.dart';
+import 'announcements_tab.dart';
+import 'gifts_tab.dart';
 import 'live_stats_service.dart';
+import 'user_detail_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -16,7 +19,7 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 4, vsync: this);
+  late final TabController _tabs = TabController(length: 6, vsync: this);
 
   @override
   void dispose() { _tabs.dispose(); super.dispose(); }
@@ -76,7 +79,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 ),
                 child: TabBar(
                   controller: _tabs,
-                  isScrollable: false,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
                   dividerColor: Colors.transparent,
                   indicator: BoxDecoration(
                     gradient: AzarPalette.brandGradient,
@@ -92,6 +96,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     Tab(text: 'RAPORLAR'),
                     Tab(text: 'KULLANICILAR'),
                     Tab(text: 'YASAKLAR'),
+                    Tab(text: 'DUYURULAR'),
+                    Tab(text: 'HEDİYELER'),
                   ],
                 ),
               ),
@@ -104,6 +110,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     _ReportsTab(),
                     _UsersTab(),
                     _BansTab(),
+                    AnnouncementsTab(),
+                    GiftsTab(),
                   ],
                 ),
               ),
@@ -917,7 +925,12 @@ class _UserTile extends StatelessWidget {
     final nick = (profile['nickname'] as String?) ?? '—';
     final role = (profile['role'] as String?) ?? 'user';
     final banned = (profile['is_banned'] as bool?) ?? false;
-    return Container(
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => AdminUserDetailScreen(userId: id)),
+      ).then((_) => onChanged()),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         gradient: AzarPalette.surfaceGradient,
@@ -988,6 +1001,7 @@ class _UserTile extends StatelessWidget {
                 ),
         ],
       ),
+    ),
     );
   }
 }
