@@ -88,42 +88,17 @@ create or replace view public.referral_stats_v as
   group by p.id, p.referral_code;
 
 
--- 5) trust score (view + helper) ---------------------------------------------
--- Range 0..100.  Anyone with role>=user starts at 50 baseline.
-create or replace view public.trust_score_v as
-  with base as (
-    select
-      p.id,
-      50
-        + least(30, extract(day from (now() - p.created_at))::int)            as age_pts
-        - 10 * coalesce((select count(*) from public.reports where reported_id = p.id and status in ('pending','actioned')), 0) as report_pts
-        + least(20, p.matches_count / 10)                                     as match_pts
-        + case when p.verified_phone then 15 else 0 end                       as phone_pts
-        + case when p.verified_photo then 15 else 0 end                       as photo_pts
-    from public.profiles p
-  )
-  select id,
-         greatest(0, least(100,
-           50
-           + age_pts - 50           -- age contributes above baseline
-           + report_pts             -- already negative
-           + (match_pts - 50)       -- adjust baseline offset
-           + phone_pts
-           + photo_pts
-         ))::int as trust_score
-  from base;
-
--- Simpler & correct version: drop the offset hacks above, return clean score.
-drop view if exists public.trust_score_v;
+-- 5) trust score view -------------------------------------------------------
+-- Range 0..100, computed live from profile attributes + reports + matches.
 create or replace view public.trust_score_v as
   select
     p.id,
     greatest(0, least(100,
       50
-      + least(20, extract(day from (now() - p.created_at))::int * 2 / 3)            -- account age: ~+1 every 1.5 day, capped 20
+      + least(20, extract(day from (now() - p.created_at))::int * 2 / 3)
       - 12 * coalesce((select count(*) from public.reports r
                        where r.reported_id = p.id and r.status in ('pending','actioned')), 0)
-      + least(15, p.matches_count / 5)                                              -- matches: +1 per 5, capped 15
+      + least(15, p.matches_count / 5)
       + case when p.verified_phone then 10 else 0 end
       + case when p.verified_photo then 15 else 0 end
     ))::int as trust_score
