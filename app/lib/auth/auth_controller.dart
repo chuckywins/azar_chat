@@ -130,9 +130,25 @@ class AuthController extends ChangeNotifier {
 
   String _humanize(Object e) {
     final msg = e.toString();
-    if (msg.contains('Invalid login credentials')) return 'E-posta veya şifre hatalı';
-    if (msg.contains('User already registered')) return 'Bu e-posta zaten kayıtlı';
+    if (msg.contains('Invalid login credentials')) {
+      return 'E-posta veya şifre hatalı. Kaydın yoksa üstteki KAYIT sekmesini kullan.';
+    }
+    if (msg.contains('User already registered')) {
+      return 'Bu e-posta zaten kayıtlı. GİRİŞ sekmesinden devam et.';
+    }
     if (msg.contains('Email rate limit')) return 'Çok fazla deneme, biraz bekle';
+    if (msg.contains('Email signups are disabled')) {
+      return 'E-posta kaydı kapalı. Yöneticiye bildir.';
+    }
+    if (msg.contains('Anonymous sign-ins are disabled')) {
+      return 'Misafir girişi henüz aktif değil. Google veya E-posta dene.';
+    }
+    if (msg.contains('Email not confirmed')) {
+      return 'E-postanı onaylaman gerek. Gelen kutuna (ve junk klasörüne) bak.';
+    }
+    if (msg.contains('Provider is not enabled')) {
+      return 'Google girişi henüz aktif değil. E-posta veya Misafir dene.';
+    }
     return msg.replaceFirst('Exception: ', '');
   }
 

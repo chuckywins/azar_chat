@@ -17,7 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _showEmail = false;
   final _email = TextEditingController();
   final _pass = TextEditingController();
-  bool _isSignUp = false;
+  bool _isSignUp = true; // first-time visitors default to "Kayıt"
 
   @override
   void dispose() {
