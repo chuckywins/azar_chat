@@ -98,6 +98,23 @@ class _KCProfileState extends State<KCProfile> {
                   auth.isAnonymous ? 'Misafir hesabı' : (auth.user?.email ?? '-'),
                   style: kcManrope(13.5, color: KC.muted),
                 ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: auth.isModerator ? KC.verify.withValues(alpha: 0.15) : KC.surface2,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: auth.isModerator ? KC.verify : KC.border),
+                  ),
+                  child: Text(
+                    'rol: ${auth.profile?.role ?? "yükleniyor..."}',
+                    style: kcManrope(11, w: FontWeight.w700,
+                        color: auth.isModerator ? KC.verify : KC.muted, letter: 0.5),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text('UUID: ${auth.userId ?? "-"}',
+                    style: kcManrope(10, color: KC.muted).copyWith(fontFamily: 'monospace')),
                 if (_trust != null) ...[
                   const SizedBox(height: 10),
                   _trustBadge(_trust!),

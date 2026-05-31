@@ -79,10 +79,15 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
   Future<void> _like() async {
     final ctx = KCContext.instance;
     final p = ctx.partner;
+    final peerUid = ctx.app.peerUserId;
     if (p == null || _liked) return;
+    if (peerUid == null) {
+      ctx.toast('Misafir kullanıcılar beğenilemez');
+      return;
+    }
     setState(() => _liked = true);
     try {
-      final mutual = await FriendsService.instance.like(p.id);
+      final mutual = await FriendsService.instance.like(peerUid);
       if (!mounted) return;
       if (mutual) {
         ctx.toast('🎉 ${p.name} ile arkadaş oldunuz!');
@@ -232,7 +237,13 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
                       KCIconBtn(icon: Icons.card_giftcard_rounded, accent: true, size: 52, label: 'Hediye',
                         onTap: () => _showGiftSheet()),
                       KCIconBtn(icon: Icons.chat_bubble_outline_rounded, size: 52, label: 'Mesaj',
-                        onTap: () { ctx.setChatUser(p); ctx.setScreen('thread'); }),
+                        onTap: () {
+                          if (ctx.app.peerUserId == null) {
+                            ctx.toast('Misafir kullanıcılarla mesajlaşılamaz');
+                            return;
+                          }
+                          ctx.setChatUser(p); ctx.setScreen('thread');
+                        }),
                     ],
                   ),
                   const SizedBox(height: 16),

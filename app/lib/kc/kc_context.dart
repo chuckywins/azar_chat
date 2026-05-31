@@ -110,11 +110,13 @@ class KCContext extends ChangeNotifier {
         if (activeScreen != 'matching') setScreen('matching');
         break;
       case AppPhase.inCall:
-        // Sync partner KCUser shape from real peer info
-        final pid = app.peerId;
+        // Sync partner KCUser shape from real peer info.
+        // Prefer the auth user UUID (so like/message work against profiles table);
+        // fall back to socket id only for display.
+        final realId = app.peerUserId ?? app.peerId;
         final pname = app.peerName ?? 'Yabancı';
-        if (pid != null) {
-          partner = kcUserFromConversationRow(peerId: pid, nickname: pname);
+        if (realId != null) {
+          partner = kcUserFromConversationRow(peerId: realId, nickname: pname);
         }
         if (activeScreen != 'video') setScreen('video');
         break;

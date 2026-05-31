@@ -274,6 +274,7 @@ class AppController extends ChangeNotifier {
   }
 
   String? _peerUserId;
+  String? get peerUserId => _peerUserId;
 
   void _teardownPeer() {
     final p = _peer;
