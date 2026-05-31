@@ -68,7 +68,7 @@ as $$
          b.id,
          b.reason
     from public.bans b
-   where (b.expires_at is null or b.expires_at > now())
+   where (b.until is null or b.until > now())
      and (
        (p_ip is not null             and b.banned_ip      = p_ip)
        or
@@ -109,16 +109,20 @@ begin
   select last_ip, device_fp_hash into v_ip, v_fp
     from public.profiles where id = p_user_id;
 
-  insert into public.bans (user_id, reason, expires_at, created_by, banned_ip, device_fp_hash)
-  values (p_user_id, p_reason, p_expires_at, v_actor, v_ip, v_fp)
+  insert into public.bans (user_id, reason, until, created_by, source, banned_ip, device_fp_hash)
+  values (p_user_id, p_reason, p_expires_at, v_actor, 'manual', v_ip, v_fp)
   returning id into v_ban_id;
 
-  update public.profiles set banned = true where id = p_user_id;
+  update public.profiles
+     set is_banned    = true,
+         banned_until = p_expires_at,
+         ban_reason   = p_reason
+   where id = p_user_id;
 
   -- Audit trail (v5)
   insert into public.audit_logs (actor_id, action, target_id, details)
   values (v_actor, 'ban_user_evasion', p_user_id,
-          jsonb_build_object('reason', p_reason, 'expires_at', p_expires_at,
+          jsonb_build_object('reason', p_reason, 'until', p_expires_at,
                              'captured_ip', v_ip::text, 'captured_fp', v_fp));
 
   -- In-app notification (v5)
