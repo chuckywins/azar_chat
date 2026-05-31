@@ -7,6 +7,7 @@ import 'kc_context.dart';
 import 'screens/chats.dart';
 import 'screens/home.dart';
 import 'screens/matching.dart';
+import 'screens/notifications.dart';
 import 'screens/onboarding.dart';
 import 'screens/profile.dart';
 import 'screens/store.dart';
@@ -72,6 +73,7 @@ class _KCAppState extends State<KCApp> {
       case 'store':      body = const KCStore(); break;
       case 'chats':      body = const KCChats(); break;
       case 'thread':     body = const KCThread(); break;
+      case 'notifications': body = const KCNotifications(); break;
       default:           body = const KCOnboarding();
     }
 

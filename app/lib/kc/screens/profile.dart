@@ -4,11 +4,13 @@ import '../../admin/admin_screen.dart';
 import '../../auth/auth_controller.dart';
 import '../../services/coin_service.dart';
 import '../../services/friends_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/vip_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
 import '../real_data.dart';
 import '../tokens.dart';
+import 'blocks.dart';
 
 class KCProfile extends StatefulWidget {
   const KCProfile({super.key});
@@ -21,6 +23,7 @@ class _KCProfileState extends State<KCProfile> {
   int? _coins;
   VipStatus? _vip;
   Map<String, int> _refStats = const {'invited': 0, 'active': 0};
+  int _unreadNotif = 0;
 
   @override
   void initState() {
@@ -44,13 +47,30 @@ class _KCProfileState extends State<KCProfile> {
     final coins = await CoinService.instance.currentBalance();
     final vip = await VipService.instance.myStatus();
     final stats = await FriendsService.instance.referralStats();
+    final unread = await NotificationService.instance.unreadCount();
     if (!mounted) return;
     setState(() {
       _trust = trust;
       _coins = coins;
       _vip = vip;
       _refStats = stats;
+      _unreadNotif = unread;
     });
+  }
+
+  Future<void> _claimDaily() async {
+    try {
+      final streak = await CoinService.instance.claimDailyBonus();
+      if (!mounted) return;
+      if (streak == 0) {
+        KCContext.instance.toast('Bugün zaten aldın — yarın tekrar gel');
+      } else {
+        KCContext.instance.toast('🔥 $streak. günlük seri — bonus eklendi');
+      }
+      await _load();
+    } catch (e) {
+      KCContext.instance.toast('Hata: $e');
+    }
   }
 
   @override
@@ -132,27 +152,48 @@ class _KCProfileState extends State<KCProfile> {
           ),
           const SizedBox(height: 16),
 
-          // ── coin pill (real)
+          // ── coin pill (real) + daily bonus
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: KC.surface, borderRadius: BorderRadius.circular(18),
               border: Border.all(color: KC.border),
             ),
-            child: Row(children: [
-              const KCDiamond(size: 22),
-              const SizedBox(width: 10),
-              Text(_coins == null ? '...' : kcNum(_coins!), style: kcSora(20, w: FontWeight.w700)),
-              const SizedBox(width: 5),
-              Text('coin', style: kcManrope(13, color: KC.muted)),
-              const Spacer(),
+            child: Column(children: [
+              Row(children: [
+                const KCDiamond(size: 22),
+                const SizedBox(width: 10),
+                Text(_coins == null ? '...' : kcNum(_coins!), style: kcSora(20, w: FontWeight.w700)),
+                const SizedBox(width: 5),
+                Text('coin', style: kcManrope(13, color: KC.muted)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => ctx.setScreen('store'),
+                  child: Container(
+                    height: 36, padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: const BoxDecoration(gradient: KC.grad, borderRadius: BorderRadius.all(Radius.circular(999))),
+                    alignment: Alignment.center,
+                    child: Text('Mağaza', style: kcSora(13, w: FontWeight.w700, color: Colors.white)),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 10),
               GestureDetector(
-                onTap: () => ctx.setScreen('store'),
+                onTap: _claimDaily,
                 child: Container(
-                  height: 36, padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: const BoxDecoration(gradient: KC.grad, borderRadius: BorderRadius.all(Radius.circular(999))),
-                  alignment: Alignment.center,
-                  child: Text('Mağaza', style: kcSora(13, w: FontWeight.w700, color: Colors.white)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFD460).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFFD460).withValues(alpha: 0.45)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.local_fire_department_rounded, color: Color(0xFFFFD460), size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('Günlük bonusunu al',
+                        style: kcManrope(13.5, w: FontWeight.w700, color: KC.text))),
+                    const Icon(Icons.chevron_right_rounded, color: KC.muted, size: 18),
+                  ]),
                 ),
               ),
             ]),
@@ -250,10 +291,14 @@ class _KCProfileState extends State<KCProfile> {
           ],
 
           _group([
-            _SettingRow(icon: Icons.notifications_outlined, color: KC.warning, label: 'Bildirimler',
-                onTap: () => ctx.toast('Ayarlar')),
+            _SettingRow(icon: Icons.notifications_outlined, color: KC.warning,
+                label: 'Bildirimler',
+                detail: _unreadNotif > 0 ? '$_unreadNotif yeni' : null,
+                onTap: () => ctx.setScreen('notifications')),
             _SettingRow(icon: Icons.person_off_outlined, color: KC.verify, label: 'Engellenenler',
-                onTap: () => ctx.toast('Liste boş'), last: true),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const KCBlocksScreen()),
+                ).then((_) => _load()), last: true),
           ]),
           const SizedBox(height: 14),
           _group([

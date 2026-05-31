@@ -103,4 +103,20 @@ class CoinService {
       'p_user_id': userId, 'p_delta': delta, 'p_note': note,
     });
   }
+
+  /// Claim today's daily login bonus. Returns the new streak count, or 0 if already claimed.
+  Future<int> claimDailyBonus() async {
+    final res = await _c.rpc('claim_daily_bonus');
+    return (res as num?)?.toInt() ?? 0;
+  }
+
+  Future<List<({DateTime day, int count, int amount})>> adminEarningsDaily({int days = 30}) async {
+    final rows = await _c.rpc('admin_earnings_daily', params: {'p_days': days});
+    if (rows is! List) return const [];
+    return rows.cast<Map<String, dynamic>>().map((r) => (
+      day: DateTime.parse(r['day'] as String),
+      count: (r['coin_count'] as num).toInt(),
+      amount: (r['coin_amount'] as num).toInt(),
+    )).toList();
+  }
 }

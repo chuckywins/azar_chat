@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../services/coin_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/presence_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
@@ -18,8 +19,10 @@ class KCHome extends StatefulWidget {
 class _KCHomeState extends State<KCHome> {
   int _coins = 0;
   int _online = 0;
+  int _unread = 0;
   StreamSubscription? _coinSub;
   StreamSubscription? _statsSub;
+  Timer? _unreadTimer;
 
   @override
   void initState() {
@@ -33,12 +36,20 @@ class _KCHomeState extends State<KCHome> {
     PresenceService.instance.onlineCount().then((v) {
       if (mounted) setState(() => _online = v);
     });
+    _loadUnread();
+    _unreadTimer = Timer.periodic(const Duration(seconds: 20), (_) => _loadUnread());
+  }
+
+  Future<void> _loadUnread() async {
+    final n = await NotificationService.instance.unreadCount();
+    if (mounted) setState(() => _unread = n);
   }
 
   @override
   void dispose() {
     _coinSub?.cancel();
     _statsSub?.cancel();
+    _unreadTimer?.cancel();
     super.dispose();
   }
 
@@ -68,6 +79,32 @@ class _KCHomeState extends State<KCHome> {
                       Text('İyi akşamlar 👋', style: kcManrope(12.5, w: FontWeight.w600, color: KC.muted)),
                       Text(me.name, style: kcSora(17, w: FontWeight.w700)),
                     ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => ctx.setScreen('notifications'),
+                  child: Container(
+                    width: 40, height: 40,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: KC.surface2, shape: BoxShape.circle,
+                      border: Border.all(color: KC.border),
+                    ),
+                    child: Stack(alignment: Alignment.center, children: [
+                      const Icon(Icons.notifications_rounded, color: KC.text, size: 19),
+                      if (_unread > 0) Positioned(
+                        top: 6, right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          constraints: const BoxConstraints(minWidth: 16),
+                          decoration: BoxDecoration(color: KC.accent, borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: KC.bg, width: 1.4)),
+                          alignment: Alignment.center,
+                          child: Text(_unread > 99 ? '99+' : '$_unread',
+                            style: kcSora(9.5, w: FontWeight.w800, color: Colors.white, height: 1)),
+                        ),
+                      ),
+                    ]),
                   ),
                 ),
                 GestureDetector(

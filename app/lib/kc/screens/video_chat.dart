@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../../services/block_service.dart';
 import '../../services/friends_service.dart';
 import '../../services/gift_service.dart';
 import '../anim.dart';
@@ -172,7 +173,7 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: () => ctx.toast('Şikayet alındı, teşekkürler'),
+                onTap: () => _showModerationSheet(context),
                 child: Container(
                   width: 40, height: 40,
                   decoration: BoxDecoration(
@@ -272,6 +273,59 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showModerationSheet(BuildContext c) {
+    final ctx = KCContext.instance;
+    final peerUid = ctx.app.peerUserId;
+    showKCSheet(c, title: 'Bu kullanıcı için', builder: (sCtx) {
+      return Column(mainAxisSize: MainAxisSize.min, children: [
+        _modOption(sCtx, Icons.flag_rounded, KC.warning, 'Şikayet et',
+          'Moderasyon ekibi inceler', () {
+            Navigator.pop(sCtx);
+            ctx.toast('Şikayet alındı, teşekkürler');
+          }),
+        const SizedBox(height: 8),
+        _modOption(sCtx, Icons.block_rounded, KC.danger, 'Engelle',
+          'Bir daha eşleşmezsiniz', () async {
+            if (peerUid == null) { Navigator.pop(sCtx); ctx.toast('Misafir kullanıcılar engellenemez'); return; }
+            Navigator.pop(sCtx);
+            try {
+              await BlockService.instance.block(peerUid, reason: 'in-call manual block');
+              ctx.toast('🚫 Kullanıcı engellendi');
+              ctx.nextPartner();
+            } catch (e) {
+              ctx.toast('Hata: $e');
+            }
+          }),
+      ]);
+    });
+  }
+
+  Widget _modOption(BuildContext c, IconData icon, Color color, String title, String subtitle, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Row(children: [
+          Container(width: 38, height: 38,
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(12)),
+            alignment: Alignment.center,
+            child: Icon(icon, color: color, size: 18)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: kcSora(14.5, w: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(subtitle, style: kcManrope(12, color: KC.muted)),
+          ])),
+        ]),
+      ),
     );
   }
 

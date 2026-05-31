@@ -8,7 +8,9 @@ import '../auth/auth_controller.dart';
 import '../theme.dart';
 import 'admin_repo.dart';
 import 'announcements_tab.dart';
+import 'audit_tab.dart';
 import 'coin_packs_tab.dart';
+import 'earnings_tab.dart';
 import 'gifts_tab.dart';
 import 'live_stats_service.dart';
 import 'user_detail_screen.dart';
@@ -20,7 +22,7 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 7, vsync: this);
+  late final TabController _tabs = TabController(length: 9, vsync: this);
 
   @override
   void dispose() { _tabs.dispose(); super.dispose(); }
@@ -94,12 +96,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.8),
                   tabs: const [
                     Tab(text: 'PANO'),
+                    Tab(text: 'GELİR'),
                     Tab(text: 'RAPORLAR'),
                     Tab(text: 'KULLANICILAR'),
                     Tab(text: 'YASAKLAR'),
                     Tab(text: 'DUYURULAR'),
                     Tab(text: 'HEDİYELER'),
                     Tab(text: 'PAKETLER'),
+                    Tab(text: 'AUDIT'),
                   ],
                 ),
               ),
@@ -109,12 +113,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   controller: _tabs,
                   children: const [
                     _DashboardTab(),
+                    EarningsTab(),
                     _ReportsTab(),
                     _UsersTab(),
                     _BansTab(),
                     AnnouncementsTab(),
                     GiftsTab(),
                     CoinPacksTab(),
+                    AuditTab(),
                   ],
                 ),
               ),
