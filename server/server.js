@@ -86,26 +86,43 @@ function verifyToken(token) {
 }
 
 async function isBanned(userId) {
-  if (!supabase || !userId) return false;
+  if (!supabase) {
+    console.log('[ban-check] no supabase client (open mode) — allowing');
+    return false;
+  }
+  if (!userId) {
+    console.log('[ban-check] no userId on peer (anonymous guest, no token) — allowing');
+    return false;
+  }
   try {
     const { data, error } = await supabase
       .from('profiles')
       .select('is_banned, banned_until')
       .eq('id', userId)
       .maybeSingle();
-    if (error || !data || !data.is_banned) return false;
+    if (error) {
+      console.error(`[ban-check] DB error for ${userId.slice(0,8)}: ${error.message} — failing OPEN`);
+      return false;
+    }
+    if (!data) {
+      console.log(`[ban-check] no profile row for ${userId.slice(0,8)} — allowing (auto-trigger may not have fired)`);
+      return false;
+    }
+    console.log(`[ban-check] ${userId.slice(0,8)} is_banned=${data.is_banned} until=${data.banned_until ?? 'null'}`);
+    if (!data.is_banned) return false;
     if (data.banned_until && new Date(data.banned_until) < new Date()) {
-      // expired auto-ban — clear it (best-effort, ignore failure)
+      console.log(`[ban-check] ${userId.slice(0,8)} ban expired — clearing`);
       supabase.from('profiles')
         .update({ is_banned: false, banned_until: null, ban_reason: null })
         .eq('id', userId)
         .then(() => {}, () => {});
       return false;
     }
+    console.log(`[ban-check] ${userId.slice(0,8)} ACTIVELY BANNED — kicking`);
     return true;
   } catch (e) {
-    console.error('[ban-check] error:', e.message);
-    return false; // fail-open: do not block on infra error
+    console.error(`[ban-check] EXCEPTION for ${userId?.slice(0,8)}: ${e.message} — failing OPEN`);
+    return false;
   }
 }
 
