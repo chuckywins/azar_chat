@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../auth/auth_controller.dart';
+import '../../services/messages_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
 import '../mock_data.dart';
@@ -12,31 +15,65 @@ class KCThread extends StatefulWidget {
   State<KCThread> createState() => _KCThreadState();
 }
 
-class _KCMsg {
-  final bool me;
-  final String t;
-  const _KCMsg({required this.me, required this.t});
-}
-
 class _KCThreadState extends State<KCThread> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
-  final List<_KCMsg> _msgs = [
-    const _KCMsg(me: false, t: 'Selam! Görüntülü sohbet çok eğlenceliydi 😄'),
-    const _KCMsg(me: true,  t: 'Bence de! Aksanın çok tatlı'),
-    const _KCMsg(me: false, t: 'Yarın aynı saatte tekrar bağlanalım mı?'),
-  ];
+
+  List<Message> _msgs = [];
+  bool _loading = true;
+  String? _error;
+  RealtimeChannel? _sub;
+  String? _peerId;
 
   @override
-  void dispose() { _input.dispose(); _scroll.dispose(); super.dispose(); }
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
 
-  void _send() {
-    final v = _input.text.trim();
-    if (v.isEmpty) return;
-    setState(() {
-      _msgs.add(_KCMsg(me: true, t: v));
-      _input.clear();
+  @override
+  void dispose() {
+    _sub?.unsubscribe();
+    _input.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final peer = KCContext.instance.chatUser;
+    if (peer == null) {
+      setState(() { _loading = false; _error = 'Sohbet bulunamadı'; });
+      return;
+    }
+    _peerId = peer.id;
+    try {
+      final list = await MessagesService.instance.threadWith(peer.id);
+      if (!mounted) return;
+      setState(() { _msgs = list; _loading = false; });
+      await MessagesService.instance.markRead(peer.id);
+      _scrollToEnd();
+      _subscribe();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _loading = false; _error = e.toString().replaceFirst('Exception: ', ''); });
+    }
+  }
+
+  void _subscribe() {
+    final peerId = _peerId;
+    if (peerId == null) return;
+    _sub = MessagesService.instance.subscribeThread(peerId, (m) {
+      if (!mounted) return;
+      setState(() => _msgs = [..._msgs, m]);
+      _scrollToEnd();
+      final me = AuthController.instance.userId;
+      if (m.senderId != me) {
+        MessagesService.instance.markRead(peerId);
+      }
     });
+  }
+
+  void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
         _scroll.animateTo(_scroll.position.maxScrollExtent,
@@ -45,14 +82,29 @@ class _KCThreadState extends State<KCThread> {
     });
   }
 
+  Future<void> _send() async {
+    final body = _input.text.trim();
+    if (body.isEmpty || _peerId == null) return;
+    _input.clear();
+    try {
+      await MessagesService.instance.send(_peerId!, body);
+      // Realtime subscription will append the new row; no manual append needed.
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Mesaj gönderilemedi: $e'), backgroundColor: KC.danger),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctx = KCContext.instance;
     final p = ctx.chatUser ?? kcUsers.first;
+    final me = AuthController.instance.userId;
 
     return Column(
       children: [
-        // ── header
         Container(
           padding: EdgeInsets.fromLTRB(14, MediaQuery.of(context).padding.top + 8, 14, 12),
           decoration: const BoxDecoration(
@@ -62,14 +114,12 @@ class _KCThreadState extends State<KCThread> {
           child: Row(children: [
             GestureDetector(
               onTap: () => ctx.setTab('chats'),
-              child: Container(
-                width: 38, height: 38,
+              child: Container(width: 38, height: 38,
                 alignment: Alignment.center,
-                child: const Icon(Icons.chevron_left_rounded, color: KC.text, size: 24),
-              ),
+                child: const Icon(Icons.chevron_left_rounded, color: KC.text, size: 24)),
             ),
             const SizedBox(width: 4),
-            KCAvatar(user: p, size: 40, online: true),
+            KCAvatar(user: p, size: 40),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -80,12 +130,12 @@ class _KCThreadState extends State<KCThread> {
                     const SizedBox(width: 5),
                     KCFlag(country: p.country, size: 13),
                   ]),
-                  Text('çevrimiçi', style: kcManrope(12, w: FontWeight.w600, color: KC.online)),
+                  Text('Sohbet', style: kcManrope(12, w: FontWeight.w600, color: KC.muted)),
                 ],
               ),
             ),
             GestureDetector(
-              onTap: () { ctx.setPartner(p); ctx.setScreen('video'); },
+              onTap: () => ctx.toast('Görüntülü arama yakında'),
               child: Container(
                 width: 40, height: 40,
                 decoration: const BoxDecoration(gradient: KC.grad, shape: BoxShape.circle),
@@ -95,45 +145,22 @@ class _KCThreadState extends State<KCThread> {
             ),
           ]),
         ),
-
-        // ── messages
         Expanded(
-          child: ListView.builder(
-            controller: _scroll,
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-            itemCount: _msgs.length,
-            itemBuilder: (_, i) {
-              final m = _msgs[i];
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 9),
-                child: Align(
-                  alignment: m.me ? Alignment.centerRight : Alignment.centerLeft,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        gradient: m.me ? KC.grad : null,
-                        color: m.me ? null : KC.surface2,
-                        borderRadius: BorderRadius.only(
-                          topLeft: const Radius.circular(20),
-                          topRight: const Radius.circular(20),
-                          bottomLeft: Radius.circular(m.me ? 20 : 6),
-                          bottomRight: Radius.circular(m.me ? 6 : 20),
+          child: _loading
+              ? const Center(child: CircularProgressIndicator(color: KC.accent, strokeWidth: 2.4))
+              : _error != null
+                  ? Center(child: Padding(padding: const EdgeInsets.all(20),
+                      child: Text(_error!, style: kcManrope(14, color: KC.danger))))
+                  : _msgs.isEmpty
+                      ? Center(child: Text('İlk mesajı sen at',
+                          style: kcManrope(14, color: KC.muted)))
+                      : ListView.builder(
+                          controller: _scroll,
+                          padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+                          itemCount: _msgs.length,
+                          itemBuilder: (_, i) => _bubble(_msgs[i], _msgs[i].senderId == me),
                         ),
-                        border: m.me ? null : Border.all(color: KC.border),
-                      ),
-                      child: Text(m.t,
-                          style: kcManrope(14.5, height: 1.35, color: m.me ? Colors.white : KC.text)),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
         ),
-
-        // ── input
         Container(
           padding: EdgeInsets.fromLTRB(14, 10, 14, MediaQuery.of(context).padding.bottom + 18),
           decoration: const BoxDecoration(
@@ -159,9 +186,7 @@ class _KCThreadState extends State<KCThread> {
                   decoration: InputDecoration(
                     hintText: 'Mesaj yaz…',
                     hintStyle: kcManrope(15, color: KC.muted),
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.zero,
+                    border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero,
                   ),
                 ),
               ),
@@ -181,4 +206,30 @@ class _KCThreadState extends State<KCThread> {
       ],
     );
   }
+
+  Widget _bubble(Message m, bool me) => Padding(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: Align(
+      alignment: me ? Alignment.centerRight : Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: me ? KC.grad : null,
+            color: me ? null : KC.surface2,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(20),
+              topRight: const Radius.circular(20),
+              bottomLeft: Radius.circular(me ? 20 : 6),
+              bottomRight: Radius.circular(me ? 6 : 20),
+            ),
+            border: me ? null : Border.all(color: KC.border),
+          ),
+          child: Text(m.body,
+            style: kcManrope(14.5, height: 1.35, color: me ? Colors.white : KC.text)),
+        ),
+      ),
+    ),
+  );
 }

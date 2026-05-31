@@ -5,10 +5,24 @@ import 'auth/login_screen.dart';
 import 'config.dart';
 import 'kc/kc_app.dart';
 import 'kc/tokens.dart';
+import 'services/presence_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AuthController.instance.bootstrap();
+  // Start presence heartbeat whenever auth state becomes "signed in".
+  AuthController.instance.addListener(() {
+    final m = AuthController.instance.mode;
+    if (m == AuthMode.anonymous || m == AuthMode.authenticated) {
+      PresenceService.instance.start();
+    } else {
+      PresenceService.instance.stop();
+    }
+  });
+  if (AuthController.instance.mode == AuthMode.anonymous ||
+      AuthController.instance.mode == AuthMode.authenticated) {
+    PresenceService.instance.start();
+  }
   runApp(const KeroApp());
 }
 
