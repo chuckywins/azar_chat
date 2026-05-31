@@ -1,0 +1,39 @@
+# Flutter web SPA — serve index.html for any unknown route so deep-links work.
+# LiteSpeed (OLS) and Apache both honor .htaccess.
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # If request is for an existing file or directory, serve it as-is.
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Anything else → SPA shell.
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Long-cache hashed assets, never-cache the shell.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+  <FilesMatch "\.(js|css|woff2?|ttf|otf|png|jpg|jpeg|svg|ico|wasm)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
+
+# Gzip on text-ish payloads.
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml application/wasm
+</IfModule>
+
+# Strong baseline security headers.
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  Header set Permissions-Policy "camera=(self), microphone=(self), geolocation=(), payment=()"
+</IfModule>
