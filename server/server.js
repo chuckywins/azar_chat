@@ -15,6 +15,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const jwt = require('jsonwebtoken');
+const { createRemoteJWKSet, jwtVerify } = require('jose');
 const { createClient } = require('@supabase/supabase-js');
 
 const PORT = parseInt(process.env.PORT || '9090', 10);
@@ -36,6 +37,11 @@ const supabase = supabaseEnabled
 if (!supabaseEnabled) {
   console.warn('[warn] Supabase env vars missing — running in OPEN MODE (no auth, no ban check)');
 }
+
+// JWKS for ES256/RS256 Supabase tokens (new projects). Falls back to HS256 with JWT secret.
+const jwks = SUPABASE_URL
+  ? createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`))
+  : null;
 
 // Free public TURN — replace with own credentials in production.
 const ICE_SERVERS = [
@@ -74,13 +80,36 @@ class Peer {
 
 // ---------------------------------------------------------------------- helpers
 
-function verifyToken(token) {
+async function verifyToken(token) {
   if (!supabaseEnabled || !token) return null;
+
+  // Decode header to pick the right verification path (new projects use ES256, old HS256).
+  let alg = null;
+  try {
+    const headerB64 = token.split('.')[0];
+    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf8'));
+    alg = header.alg;
+  } catch (_) {/* malformed token */}
+
+  // ES256 / RS256 — use JWKS (public key).
+  if (alg && alg !== 'HS256' && jwks) {
+    try {
+      const { payload } = await jwtVerify(token, jwks, {
+        issuer: `${SUPABASE_URL}/auth/v1`,
+      });
+      return payload?.sub ? { sub: payload.sub, anonymous: payload.is_anonymous === true } : null;
+    } catch (err) {
+      console.warn(`[jwt] ${alg} verify failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  // HS256 — legacy shared secret.
   try {
     const payload = jwt.verify(token, SUPABASE_JWT_SECRET, { algorithms: ['HS256'] });
     return payload?.sub ? { sub: payload.sub, anonymous: payload.is_anonymous === true } : null;
   } catch (err) {
-    console.warn('[jwt] invalid token:', err.message);
+    console.warn(`[jwt] HS256 verify failed: ${err.message}`);
     return null;
   }
 }
@@ -190,14 +219,14 @@ function removeFromQueue(peerId) {
 
 // ---------------------------------------------------------------------- handlers
 
-function handleHello(peer, msg) {
+async function handleHello(peer, msg) {
   if (typeof msg.name === 'string')               peer.name = msg.name.slice(0, 40) || 'Misafir';
   if (['M','F','X'].includes(msg.gender))         peer.gender = msg.gender;
   if (['M','F','any'].includes(msg.peerGender))   peer.peerGender = msg.peerGender;
 
   // Optional in-message token (fallback if connect URL didn't carry one).
   if (typeof msg.token === 'string' && !peer.userId) {
-    const v = verifyToken(msg.token);
+    const v = await verifyToken(msg.token);
     if (v) peer.userId = v.sub;
   }
 }
@@ -246,7 +275,7 @@ const httpServer = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server: httpServer });
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
   const peer = new Peer(ws);
   peers.set(peer.id, peer);
 
@@ -255,7 +284,7 @@ wss.on('connection', (ws, req) => {
     const url = new URL(req.url, 'http://x');
     const token = url.searchParams.get('token');
     if (token) {
-      const v = verifyToken(token);
+      const v = await verifyToken(token);
       if (v) peer.userId = v.sub;
     }
   } catch (_) {/* ignore */}
@@ -270,7 +299,7 @@ wss.on('connection', (ws, req) => {
     catch { return peer.send({ type: 'error', message: 'bad_json' }); }
 
     switch (msg.type) {
-      case 'hello':   return handleHello(peer, msg);
+      case 'hello':   return await handleHello(peer, msg);
       case 'enqueue': return enqueue(peer);
       case 'signal':  return handleSignal(peer, msg);
       case 'next':    return handleNext(peer);
