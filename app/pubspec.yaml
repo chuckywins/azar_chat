@@ -18,6 +18,9 @@ dependencies:
   google_fonts: ^6.2.1
   flutter_animate: ^4.5.0
   shared_preferences: ^2.3.0
+  fl_chart: ^0.69.0
+  share_plus: ^10.0.0
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:

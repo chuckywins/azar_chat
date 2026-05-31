@@ -27,6 +27,7 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _ctrl = PageController();
   int _page = 0;
+  bool _ageOk = false;
 
   static const _pages = [
     (Icons.bolt_rounded,    'Tek tuşla\neşleş.',     'Rastgele biriyle saniyeler içinde görüntülü sohbet.'),
@@ -35,6 +36,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   ];
 
   Future<void> _finish() async {
+    if (!_ageOk) {
+      _ctrl.animateToPage(_pages.length - 1,
+          duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        backgroundColor: AzarPalette.surfaceUp,
+        content: Text('Devam etmek için 18+ onayı gerekli', style: TextStyle(color: AzarPalette.text)),
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
     await markOnboardingDone();
     if (!mounted) return;
     widget.onDone();
@@ -84,7 +95,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   itemCount: _pages.length,
                   itemBuilder: (_, i) {
                     final p = _pages[i];
-                    return _OnboardPage(icon: p.$1, title: p.$2, subtitle: p.$3, key: ValueKey(i));
+                    return _OnboardPage(
+                      icon: p.$1, title: p.$2, subtitle: p.$3,
+                      ageGate: i == _pages.length - 1
+                          ? _AgeGate(
+                              value: _ageOk,
+                              onChange: (v) => setState(() => _ageOk = v),
+                            )
+                          : null,
+                      key: ValueKey(i),
+                    );
                   },
                 ),
               ),
@@ -132,10 +152,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 }
 
 class _OnboardPage extends StatelessWidget {
-  const _OnboardPage({super.key, required this.icon, required this.title, required this.subtitle});
+  const _OnboardPage({super.key, required this.icon, required this.title, required this.subtitle, this.ageGate});
   final IconData icon;
   final String title;
   final String subtitle;
+  final Widget? ageGate;
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +166,6 @@ class _OnboardPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Big icon circle with glow
           Center(
             child: Container(
               width: 140, height: 140,
@@ -180,7 +200,56 @@ class _OnboardPage extends StatelessWidget {
             subtitle,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim, height: 1.5),
           ).animate().fadeIn(duration: 400.ms, delay: 220.ms),
+
+          if (ageGate != null) ...[
+            const SizedBox(height: 28),
+            ageGate!.animate().fadeIn(duration: 400.ms, delay: 320.ms),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _AgeGate extends StatelessWidget {
+  const _AgeGate({required this.value, required this.onChange});
+  final bool value;
+  final ValueChanged<bool> onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChange(!value),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: value ? AzarPalette.primary.withValues(alpha: 0.12) : AzarPalette.surfaceHigh,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: value ? AzarPalette.primary : AzarPalette.line, width: value ? 1.4 : 1),
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 22, height: 22,
+              decoration: BoxDecoration(
+                gradient: value ? AzarPalette.brandGradient : null,
+                color: value ? null : AzarPalette.surfaceHigh,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: value ? Colors.transparent : AzarPalette.line),
+              ),
+              alignment: Alignment.center,
+              child: value ? const Icon(Icons.check_rounded, color: Colors.white, size: 14) : null,
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                '18 yaş ve üzerindeyim, kullanım şartlarını ve gizlilik politikasını kabul ediyorum.',
+                style: TextStyle(color: AzarPalette.text, fontSize: 13, height: 1.4),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

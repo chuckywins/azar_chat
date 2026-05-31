@@ -16,6 +16,13 @@ class ChatMessage {
   final DateTime at;
 }
 
+class EmojiBurst {
+  EmojiBurst({required this.emoji, required this.fromMe, required this.at});
+  final String emoji;
+  final bool fromMe;
+  final DateTime at;
+}
+
 enum AppPhase {
   idle,        // before pressing start
   connecting,  // opening WS / getUserMedia
@@ -46,6 +53,13 @@ class AppController extends ChangeNotifier {
   /// In-call chat (per match — cleared between matches).
   final List<ChatMessage> chatMessages = [];
   int unreadChatCount = 0;
+
+  /// Emoji bursts visible during the current match (transient).
+  final List<EmojiBurst> emojiBursts = [];
+
+  /// Whether the local user has liked the current peer.
+  bool likedCurrentPeer = false;
+  bool likeBusy = false;
 
   String displayName = 'Misafir';
   String gender = 'X';      // M | F | X
@@ -164,6 +178,7 @@ class AppController extends ChangeNotifier {
     final info = (msg['peerInfo'] as Map?)?.cast<String, dynamic>();
     peerId = pid;
     peerName = info?['name'] as String? ?? 'Yabancı';
+    _peerUserId = info?['userId'] as String?;
 
     final localStream = _media.stream;
     if (localStream == null) return;
@@ -194,11 +209,35 @@ class AppController extends ChangeNotifier {
         unreadChatCount += 1;
         notifyListeners();
       },
+      onEmoji: (emoji) {
+        emojiBursts.add(EmojiBurst(emoji: emoji, fromMe: false, at: DateTime.now()));
+        notifyListeners();
+        _pruneEmojis();
+      },
     );
     await _peer!.init(initiator: initiator);
     chatMessages.clear();
     unreadChatCount = 0;
+    emojiBursts.clear();
+    likedCurrentPeer = false;
     _setPhase(AppPhase.inCall);
+  }
+
+  void sendEmoji(String emoji) {
+    _peer?.sendEmoji(emoji);
+    emojiBursts.add(EmojiBurst(emoji: emoji, fromMe: true, at: DateTime.now()));
+    notifyListeners();
+    _pruneEmojis();
+  }
+
+  Timer? _emojiPrune;
+  void _pruneEmojis() {
+    _emojiPrune?.cancel();
+    _emojiPrune = Timer(const Duration(seconds: 3), () {
+      final cutoff = DateTime.now().subtract(const Duration(seconds: 3));
+      emojiBursts.removeWhere((e) => e.at.isBefore(cutoff));
+      notifyListeners();
+    });
   }
 
   void sendChat(String text) {
@@ -214,6 +253,27 @@ class AppController extends ChangeNotifier {
     unreadChatCount = 0;
     notifyListeners();
   }
+
+  /// Like the current peer (if signed in and not already liked).  Returns mutual flag.
+  Future<bool> likeCurrentPeer({required Future<bool> Function(String userId) likeFn}) async {
+    final pid = _peer?.peerId;
+    if (pid == null || likedCurrentPeer || likeBusy) return false;
+    // Need the *user id* of the peer, not the socket id. Server sends peerInfo.userId.
+    final peerUid = _peerUserId;
+    if (peerUid == null) return false;
+    likeBusy = true;
+    notifyListeners();
+    try {
+      final mutual = await likeFn(peerUid);
+      likedCurrentPeer = true;
+      return mutual;
+    } finally {
+      likeBusy = false;
+      notifyListeners();
+    }
+  }
+
+  String? _peerUserId;
 
   void _teardownPeer() {
     final p = _peer;

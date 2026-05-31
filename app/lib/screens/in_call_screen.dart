@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../auth/auth_controller.dart';
+import '../services/friends_service.dart';
 import '../services/report_service.dart';
 import '../state/app_controller.dart';
 import '../theme.dart';
@@ -68,7 +69,7 @@ class InCallScreen extends StatelessWidget {
             ),
           ),
 
-          // Top-left peer chip + chat + report
+          // Top-left peer chip + chat + heart + report
           Positioned(
             top: topPad + 14, left: 16, right: 130,
             child: Row(
@@ -81,16 +82,22 @@ class InCallScreen extends StatelessWidget {
                 _glassChatBtn(
                   unread: controller.unreadChatCount,
                   onTap: () => _showChatSheet(context, controller),
-                ).animate().fadeIn(duration: 400.ms, delay: 80.ms),
+                ).animate().fadeIn(duration: 400.ms, delay: 60.ms),
+                const SizedBox(width: 8),
+                _HeartBtn(controller: controller)
+                    .animate().fadeIn(duration: 400.ms, delay: 120.ms),
                 const SizedBox(width: 8),
                 _glassIconBtn(
                   icon: Icons.flag_outlined,
                   color: AzarPalette.danger,
                   onTap: () => _showReportSheet(context, controller),
-                ).animate().fadeIn(duration: 400.ms, delay: 140.ms),
+                ).animate().fadeIn(duration: 400.ms, delay: 180.ms),
               ],
             ),
           ),
+
+          // Floating emoji bursts overlay
+          Positioned.fill(child: _EmojiBurstOverlay(controller: controller)),
 
           // Top-right local PIP
           Positioned(
@@ -128,6 +135,12 @@ class InCallScreen extends StatelessWidget {
                           icon: Icons.cameraswitch_rounded,
                           on: true,
                           onTap: controller.switchCamera,
+                        ),
+                        const SizedBox(width: 10),
+                        _ctrlBtn(
+                          icon: Icons.emoji_emotions_outlined,
+                          on: true,
+                          onTap: () => _showEmojiPicker(context, controller),
                         ),
                         const SizedBox(width: 10),
                         _ctrlBtn(
@@ -315,6 +328,178 @@ class _SwipeNextButton extends StatelessWidget {
         height: 56,
         onTap: onTap,
       ),
+    );
+  }
+}
+
+// ============================================================================
+// Heart button (like) — turns to mutual snackbar
+// ============================================================================
+
+class _HeartBtn extends StatelessWidget {
+  const _HeartBtn({required this.controller});
+  final AppController controller;
+
+  Future<void> _onTap(BuildContext context) async {
+    if (controller.likedCurrentPeer) return;
+    final mutual = await controller.likeCurrentPeer(
+      likeFn: (uid) => FriendsService.instance.like(uid),
+    );
+    if (!context.mounted) return;
+    final color = mutual ? AzarPalette.success : AzarPalette.primary;
+    final icon = mutual ? Icons.handshake_rounded : Icons.favorite_rounded;
+    final text = mutual ? 'Arkadaş oldunuz!' : 'Beğendin — karşı taraf da beğenirse arkadaş olursunuz';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: AzarPalette.surfaceUp,
+      content: Row(children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text, style: const TextStyle(color: AzarPalette.text))),
+      ]),
+      duration: const Duration(seconds: 3),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: color.withValues(alpha: 0.5)),
+      ),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final liked = controller.likedCurrentPeer;
+    return GestureDetector(
+      onTap: () => _onTap(context),
+      child: Container(
+        width: 36, height: 36,
+        decoration: BoxDecoration(
+          gradient: liked ? AzarPalette.brandGradient : null,
+          color: liked ? null : AzarPalette.surface.withValues(alpha: 0.75),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: liked ? Colors.transparent : AzarPalette.primary.withValues(alpha: 0.45)),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          liked ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
+          color: liked ? Colors.white : AzarPalette.primary, size: 16,
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// Emoji picker bottom sheet + floating burst overlay
+// ============================================================================
+
+const _emojiSet = ['🔥','❤️','😂','😮','👏','🎉','🌹','💯','😍','🙌','💀','✨'];
+
+Future<void> _showEmojiPicker(BuildContext context, AppController controller) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => Container(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+      decoration: const BoxDecoration(
+        gradient: AzarPalette.surfaceGradient,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border(top: BorderSide(color: AzarPalette.line)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: AzarPalette.line, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8, runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: _emojiSet.map((e) => GestureDetector(
+              onTap: () {
+                controller.sendEmoji(e);
+                Navigator.of(ctx).maybePop();
+              },
+              child: Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(
+                  color: AzarPalette.surfaceHigh,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AzarPalette.line),
+                ),
+                alignment: Alignment.center,
+                child: Text(e, style: const TextStyle(fontSize: 28)),
+              ),
+            )).toList(),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _EmojiBurstOverlay extends StatelessWidget {
+  const _EmojiBurstOverlay({required this.controller});
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    if (controller.emojiBursts.isEmpty) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: Stack(
+        children: controller.emojiBursts.map((b) => _FloatingEmoji(burst: b, key: ValueKey(b.at.microsecondsSinceEpoch))).toList(),
+      ),
+    );
+  }
+}
+
+class _FloatingEmoji extends StatefulWidget {
+  const _FloatingEmoji({super.key, required this.burst});
+  final EmojiBurst burst;
+  @override
+  State<_FloatingEmoji> createState() => _FloatingEmojiState();
+}
+
+class _FloatingEmojiState extends State<_FloatingEmoji> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 3));
+  late final double _xOffset;
+
+  @override
+  void initState() {
+    super.initState();
+    // semi-random horizontal offset based on micros
+    final m = widget.burst.at.microsecondsSinceEpoch;
+    _xOffset = ((m % 200) - 100) / 100.0; // -1..1
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, child) {
+        final t = _ctrl.value;
+        // Start at bottom (from-me) or anchor from the peer (right side).
+        final startX = widget.burst.fromMe ? size.width * 0.5 : size.width * 0.78;
+        final dx = startX + _xOffset * 80;
+        final dy = size.height * 0.85 - (size.height * 0.55) * Curves.easeOut.transform(t);
+        final opacity = (1.0 - t).clamp(0.0, 1.0);
+        final scale = 0.7 + 0.6 * Curves.easeOutBack.transform(t.clamp(0.0, 0.6) / 0.6);
+        return Positioned(
+          left: dx - 24, top: dy - 24,
+          child: Opacity(
+            opacity: opacity,
+            child: Transform.scale(scale: scale, child: child),
+          ),
+        );
+      },
+      child: Text(widget.burst.emoji, style: const TextStyle(fontSize: 56)),
     );
   }
 }

@@ -1,9 +1,13 @@
+import 'dart:async';
+
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../auth/auth_controller.dart';
 import '../theme.dart';
 import 'admin_repo.dart';
+import 'live_stats_service.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -160,21 +164,52 @@ class _DashboardTab extends StatefulWidget {
 }
 
 class _DashboardTabState extends State<_DashboardTab> {
-  late Future<Map<String, int>> _future = AdminRepo.instance.counters();
+  late Future<Map<String, int>> _countersFut = AdminRepo.instance.counters();
+  late Future<List<({DateTime day, int users, int reports})>> _dailyFut = AdminRepo.instance.dailyStats(days: 14);
+
+  LiveServerStats? _live;
+  StreamSubscription? _liveSub;
+  final List<int> _peerHistory = [];
+
+  @override
+  void initState() {
+    super.initState();
+    LiveStatsService.instance.start(interval: const Duration(seconds: 5));
+    _liveSub = LiveStatsService.instance.stream.listen((s) {
+      if (!mounted) return;
+      setState(() {
+        _live = s;
+        _peerHistory.add(s.peers);
+        if (_peerHistory.length > 30) _peerHistory.removeAt(0);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _liveSub?.cancel();
+    LiveStatsService.instance.stop();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
       color: AzarPalette.primary,
       onRefresh: () async {
-        setState(() => _future = AdminRepo.instance.counters());
-        await _future;
+        setState(() {
+          _countersFut = AdminRepo.instance.counters();
+          _dailyFut = AdminRepo.instance.dailyStats(days: 14);
+        });
+        await Future.wait([_countersFut, _dailyFut]);
       },
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          _liveBanner(),
+          const SizedBox(height: 16),
           FutureBuilder<Map<String, int>>(
-            future: _future,
+            future: _countersFut,
             builder: (context, snap) {
               if (snap.connectionState == ConnectionState.waiting) return const _Loading();
               if (snap.hasError) return _ErrorBox(message: '${snap.error}');
@@ -206,16 +241,295 @@ class _DashboardTabState extends State<_DashboardTab> {
               );
             },
           ),
-          const SizedBox(height: 28),
-          Text('HIZLI İŞLEMLER',
-              style: const TextStyle(color: AzarPalette.textFaint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
-          const SizedBox(height: 8),
-          Text(
-            'Üst sekmelerden raporları, kullanıcıları ve yasakları yönet.',
-            style: Theme.of(context).textTheme.bodyMedium,
+          const SizedBox(height: 24),
+          const Text('SON 14 GÜN',
+              style: TextStyle(color: AzarPalette.textFaint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+          const SizedBox(height: 10),
+          FutureBuilder<List<({DateTime day, int users, int reports})>>(
+            future: _dailyFut,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) return const _Loading();
+              final data = snap.data ?? const [];
+              return _DailyChartCard(data: data)
+                  .animate().fadeIn(duration: 350.ms, delay: 220.ms);
+            },
           ),
         ],
       ),
+    );
+  }
+
+  Widget _liveBanner() {
+    final liveOn = _live != null;
+    final peers = _live?.peers ?? 0;
+    final queue = _live?.queue ?? 0;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: liveOn ? AzarPalette.brandGradient : null,
+        color: liveOn ? null : AzarPalette.surfaceHigh,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: liveOn
+            ? [BoxShadow(color: AzarPalette.primary.withValues(alpha: 0.3), blurRadius: 26, spreadRadius: -4)]
+            : null,
+      ),
+      child: Row(
+        children: [
+          _BlinkDot(active: liveOn),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  liveOn ? 'CANLI' : 'BAĞLANIYOR',
+                  style: TextStyle(
+                    color: liveOn ? Colors.white.withValues(alpha: 0.9) : AzarPalette.textDim,
+                    fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  liveOn ? '$peers aktif • $queue kuyrukta' : 'Sunucudan ilk yanıt bekleniyor',
+                  style: TextStyle(
+                    color: liveOn ? Colors.white : AzarPalette.textFaint,
+                    fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_peerHistory.length > 1)
+            SizedBox(
+              width: 110, height: 40,
+              child: _SparkLine(values: _peerHistory),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BlinkDot extends StatefulWidget {
+  const _BlinkDot({required this.active});
+  final bool active;
+  @override
+  State<_BlinkDot> createState() => _BlinkDotState();
+}
+
+class _BlinkDotState extends State<_BlinkDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
+  @override
+  void dispose() { _c.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active) {
+      return Container(
+        width: 10, height: 10,
+        decoration: const BoxDecoration(color: AzarPalette.textFaint, shape: BoxShape.circle),
+      );
+    }
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.4, end: 1.0).animate(_c),
+      child: Container(
+        width: 10, height: 10,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.white.withValues(alpha: 0.5), blurRadius: 8)],
+        ),
+      ),
+    );
+  }
+}
+
+class _SparkLine extends StatelessWidget {
+  const _SparkLine({required this.values});
+  final List<int> values;
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty) return const SizedBox.shrink();
+    final maxV = values.reduce((a, b) => a > b ? a : b).toDouble().clamp(1.0, double.infinity);
+    final spots = <FlSpot>[];
+    for (int i = 0; i < values.length; i++) {
+      spots.add(FlSpot(i.toDouble(), values[i].toDouble()));
+    }
+    return LineChart(LineChartData(
+      gridData: const FlGridData(show: false),
+      titlesData: const FlTitlesData(show: false),
+      borderData: FlBorderData(show: false),
+      minX: 0, maxX: (values.length - 1).toDouble(),
+      minY: 0, maxY: maxV * 1.15,
+      lineBarsData: [
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          curveSmoothness: 0.25,
+          barWidth: 2,
+          isStrokeCapRound: true,
+          color: Colors.white,
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(
+            show: true,
+            color: Colors.white.withValues(alpha: 0.18),
+          ),
+        ),
+      ],
+    ));
+  }
+}
+
+class _DailyChartCard extends StatelessWidget {
+  const _DailyChartCard({required this.data});
+  final List<({DateTime day, int users, int reports})> data;
+
+  @override
+  Widget build(BuildContext context) {
+    if (data.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: AzarPalette.surfaceGradient,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AzarPalette.line),
+        ),
+        child: const Text('Veri yok', style: TextStyle(color: AzarPalette.textDim)),
+      );
+    }
+
+    final userSpots = <FlSpot>[];
+    final reportSpots = <FlSpot>[];
+    double maxV = 0;
+    for (int i = 0; i < data.length; i++) {
+      final u = data[i].users.toDouble();
+      final r = data[i].reports.toDouble();
+      userSpots.add(FlSpot(i.toDouble(), u));
+      reportSpots.add(FlSpot(i.toDouble(), r));
+      if (u > maxV) maxV = u;
+      if (r > maxV) maxV = r;
+    }
+    if (maxV < 5) maxV = 5;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
+      decoration: BoxDecoration(
+        gradient: AzarPalette.surfaceGradient,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AzarPalette.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 8, right: 4, bottom: 12),
+            child: Row(
+              children: [
+                _LegendDot(color: AzarPalette.secondary, label: 'Yeni kullanıcı'),
+                const SizedBox(width: 14),
+                _LegendDot(color: AzarPalette.primary, label: 'Rapor'),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 200,
+            child: LineChart(LineChartData(
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: (maxV / 4).clamp(1, 999).toDouble(),
+                getDrawingHorizontalLine: (_) => FlLine(color: AzarPalette.line, strokeWidth: 1),
+              ),
+              titlesData: FlTitlesData(
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    interval: (maxV / 4).clamp(1, 999).toDouble(),
+                    getTitlesWidget: (v, _) => Text(
+                      v.toInt().toString(),
+                      style: const TextStyle(color: AzarPalette.textFaint, fontSize: 10),
+                    ),
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 24,
+                    interval: (data.length / 4).ceilToDouble(),
+                    getTitlesWidget: (v, _) {
+                      final i = v.toInt();
+                      if (i < 0 || i >= data.length) return const SizedBox.shrink();
+                      final d = data[i].day;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '${d.day}/${d.month}',
+                          style: const TextStyle(color: AzarPalette.textFaint, fontSize: 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              borderData: FlBorderData(show: false),
+              minX: 0, maxX: (data.length - 1).toDouble(),
+              minY: 0, maxY: maxV * 1.1,
+              lineBarsData: [
+                LineChartBarData(
+                  spots: userSpots,
+                  isCurved: true,
+                  curveSmoothness: 0.25,
+                  color: AzarPalette.secondary,
+                  barWidth: 2.5,
+                  isStrokeCapRound: true,
+                  dotData: const FlDotData(show: false),
+                  belowBarData: BarAreaData(
+                    show: true,
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AzarPalette.secondary.withValues(alpha: 0.25),
+                        AzarPalette.secondary.withValues(alpha: 0.0),
+                      ],
+                    ),
+                  ),
+                ),
+                LineChartBarData(
+                  spots: reportSpots,
+                  isCurved: true,
+                  curveSmoothness: 0.25,
+                  color: AzarPalette.primary,
+                  barWidth: 2.5,
+                  isStrokeCapRound: true,
+                  dotData: const FlDotData(show: false),
+                ),
+              ],
+            )),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
+  final Color color;
+  final String label;
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(color: AzarPalette.textDim, fontSize: 11.5, fontWeight: FontWeight.w500)),
+      ],
     );
   }
 }

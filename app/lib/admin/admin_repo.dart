@@ -109,4 +109,42 @@ class AdminRepo {
       'active_bans': (bansRows as List).length,
     };
   }
+
+  /// Daily counts of new profiles and reports for the last [days] days.
+  /// Returns ordered list (oldest → newest) of (date, users, reports).
+  Future<List<({DateTime day, int users, int reports})>> dailyStats({int days = 14}) async {
+    final since = DateTime.now().toUtc().subtract(Duration(days: days));
+    final profiles = await _c
+        .from('profiles')
+        .select('created_at')
+        .gte('created_at', since.toIso8601String());
+    final reports = await _c
+        .from('reports')
+        .select('created_at')
+        .gte('created_at', since.toIso8601String());
+
+    final userByDay = <String, int>{};
+    final reportByDay = <String, int>{};
+
+    for (final r in (profiles as List)) {
+      final d = DateTime.tryParse(r['created_at'] as String);
+      if (d == null) continue;
+      final k = '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
+      userByDay[k] = (userByDay[k] ?? 0) + 1;
+    }
+    for (final r in (reports as List)) {
+      final d = DateTime.tryParse(r['created_at'] as String);
+      if (d == null) continue;
+      final k = '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
+      reportByDay[k] = (reportByDay[k] ?? 0) + 1;
+    }
+
+    final out = <({DateTime day, int users, int reports})>[];
+    for (int i = days - 1; i >= 0; i--) {
+      final d = DateTime.now().subtract(Duration(days: i));
+      final k = '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
+      out.add((day: DateTime(d.year, d.month, d.day), users: userByDay[k] ?? 0, reports: reportByDay[k] ?? 0));
+    }
+    return out;
+  }
 }

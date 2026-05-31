@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../auth/auth_controller.dart';
+import '../services/friends_service.dart';
 import '../theme.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -18,6 +21,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _busy = false;
   String? _msg;
   bool _msgIsError = false;
+
+  int? _trustScore;
+  String? _referralCode;
+  Map<String, int> _refStats = const {'invited': 0, 'active': 0};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExtras();
+  }
+
+  Future<void> _loadExtras() async {
+    final uid = AuthController.instance.userId;
+    if (uid == null) return;
+    final score = await FriendsService.instance.trustScoreOf(uid);
+    final row = await Supabase.instance.client
+        .from('profiles').select('referral_code').eq('id', uid).maybeSingle();
+    final stats = await FriendsService.instance.referralStats();
+    if (!mounted) return;
+    setState(() {
+      _trustScore = score;
+      _referralCode = row?['referral_code'] as String?;
+      _refStats = stats;
+    });
+  }
 
   @override
   void dispose() { _nick.dispose(); super.dispose(); }
@@ -189,7 +217,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 18),
+              _trustRow(),
+
+              const SizedBox(height: 22),
 
               GlassCard(
                 child: Column(
@@ -244,6 +275,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
               const SizedBox(height: 24),
 
+              _sectionTitle('DAVET'),
+              const SizedBox(height: 10),
+              _referralCard(),
+
+              const SizedBox(height: 24),
+
               // Account actions
               _sectionTitle('HESAP'),
               const SizedBox(height: 10),
@@ -258,6 +295,147 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _trustRow() {
+    final s = _trustScore;
+    final color = s == null
+        ? AzarPalette.textFaint
+        : s >= 75
+            ? AzarPalette.success
+            : s >= 50
+                ? AzarPalette.secondary
+                : s >= 25
+                    ? AzarPalette.warning
+                    : AzarPalette.danger;
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.shield_rounded, color: color, size: 14),
+            const SizedBox(width: 8),
+            Text(
+              s == null ? 'Güven hesaplanıyor...' : 'Güven skoru $s / 100',
+              style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _referralCard() {
+    final code = _referralCode;
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38, height: 38,
+                decoration: BoxDecoration(
+                  gradient: AzarPalette.brandGradient,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Arkadaşını davet et',
+                        style: TextStyle(color: AzarPalette.text, fontSize: 14.5, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_refStats['invited']} davet • ${_refStats['active']} aktif',
+                      style: const TextStyle(color: AzarPalette.textFaint, fontSize: 11.5),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (code != null)
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AzarPalette.surfaceHigh,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AzarPalette.line),
+                    ),
+                    child: Text(
+                      code.toUpperCase(),
+                      style: const TextStyle(
+                        color: AzarPalette.text,
+                        fontFamily: 'monospace',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: code));
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Kod kopyalandı'),
+                      backgroundColor: AzarPalette.surfaceUp,
+                      duration: Duration(seconds: 1),
+                    ));
+                  },
+                  child: Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      color: AzarPalette.surfaceHigh,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AzarPalette.line),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.copy_rounded, color: AzarPalette.textDim, size: 18),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () {
+                    final link = 'https://kerochat.netlify.app/?ref=${code.toLowerCase()}';
+                    Share.share(
+                      "kerochat'ta benimle eşleş! Linkim: $link",
+                      subject: 'kerochat davet',
+                    );
+                  },
+                  child: Container(
+                    width: 44, height: 44,
+                    decoration: const BoxDecoration(
+                      gradient: AzarPalette.brandGradient,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.share_rounded, color: Colors.white, size: 18),
+                  ),
+                ),
+              ],
+            ),
+        ],
       ),
     );
   }

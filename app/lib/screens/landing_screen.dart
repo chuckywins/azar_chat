@@ -5,6 +5,7 @@ import '../admin/admin_screen.dart';
 import '../auth/auth_controller.dart';
 import '../state/app_controller.dart';
 import '../theme.dart';
+import 'friends_sheet.dart';
 import 'profile_screen.dart';
 
 class LandingScreen extends StatefulWidget {
@@ -112,8 +113,26 @@ class _LandingScreenState extends State<LandingScreen> {
             ),
           ),
         const SizedBox(width: 8),
+        _friendsBtn(context),
+        const SizedBox(width: 8),
         _profileChip(context, auth),
       ],
+    );
+  }
+
+  Widget _friendsBtn(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showFriendsSheet(context),
+      child: Container(
+        width: 34, height: 34,
+        decoration: BoxDecoration(
+          color: AzarPalette.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AzarPalette.primary.withValues(alpha: 0.45)),
+        ),
+        alignment: Alignment.center,
+        child: const Icon(Icons.favorite_rounded, color: AzarPalette.primary, size: 15),
+      ),
     );
   }
 
