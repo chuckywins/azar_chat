@@ -52,11 +52,15 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
 
   Future<void> _sendGift(GiftCatalogItem g) async {
     final ctx = KCContext.instance;
-    final peerId = ctx.partner?.id;
-    if (peerId == null) return;
+    final peerUid = ctx.app.peerUserId;
     Navigator.of(context).maybePop();
+    if (peerUid == null) {
+      ctx.toast('Misafir kullanıcılara hediye gönderilemez');
+      return;
+    }
     try {
-      await GiftService.instance.sendGift(giftId: g.id, receiverId: peerId);
+      await GiftService.instance.sendGift(giftId: g.id, receiverId: peerUid);
+      if (!mounted) return;
       setState(() {
         _giftFxKey = ValueKey(DateTime.now().microsecondsSinceEpoch);
         _giftFxGlyph = g.glyph;
