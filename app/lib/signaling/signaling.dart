@@ -6,8 +6,9 @@ import 'package:web_socket_channel/status.dart' as ws_status;
 
 /// Thin WebSocket client that speaks the azar_chat signaling protocol.
 class Signaling {
-  Signaling(this.url);
+  Signaling(this.url, {this.accessToken});
   final String url;
+  final String? accessToken;
 
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
@@ -23,7 +24,12 @@ class Signaling {
 
   Future<void> connect() async {
     if (_channel != null) return;
-    final ch = WebSocketChannel.connect(Uri.parse(url));
+    var target = url;
+    if (accessToken != null && accessToken!.isNotEmpty) {
+      final sep = url.contains('?') ? '&' : '?';
+      target = '$url${sep}token=${Uri.encodeQueryComponent(accessToken!)}';
+    }
+    final ch = WebSocketChannel.connect(Uri.parse(target));
     _channel = ch;
     await ch.ready;
     _connected = true;

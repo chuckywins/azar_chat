@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../auth/auth_controller.dart';
 import '../config.dart';
 import '../signaling/signaling.dart';
 import '../webrtc/media.dart';
@@ -62,7 +63,10 @@ class AppController extends ChangeNotifier {
       final stream = await _media.start();
       localRenderer.srcObject = stream;
 
-      _signaling = Signaling(AppConfig.signalingUrl);
+      _signaling = Signaling(
+        AppConfig.signalingUrl,
+        accessToken: AuthController.instance.accessToken,
+      );
       await _signaling!.connect();
       _msgSub = _signaling!.messages.listen(_onMessage);
 
