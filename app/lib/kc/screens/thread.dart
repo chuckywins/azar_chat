@@ -3,12 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:image_picker/image_picker.dart';
+
 import '../../auth/auth_controller.dart';
 import '../../services/messages_service.dart';
+import '../../services/photo_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
 import '../mock_data.dart';
 import '../tokens.dart';
+import 'photo_viewer.dart';
 
 class KCThread extends StatefulWidget {
   const KCThread({super.key});
@@ -22,9 +26,11 @@ class _KCThreadState extends State<KCThread> {
   final _scroll = ScrollController();
 
   List<Message> _msgs = [];
+  List<ChatPhoto> _photos = const [];
   bool _loading = true;
   String? _error;
   RealtimeChannel? _sub;
+  RealtimeChannel? _photoSub;
   RealtimeChannel? _typingCh;
   String? _peerId;
 
@@ -44,6 +50,7 @@ class _KCThreadState extends State<KCThread> {
   void dispose() {
     _input.removeListener(_onInputChanged);
     _sub?.unsubscribe();
+    _photoSub?.unsubscribe();
     _typingCh?.unsubscribe();
     _peerTypingTimer?.cancel();
     _myTypingDebounce?.cancel();
@@ -61,13 +68,15 @@ class _KCThreadState extends State<KCThread> {
     _peerId = peer.id;
     try {
       final list = await MessagesService.instance.threadWith(peer.id);
+      final photos = await PhotoService.instance.threadWith(peer.id);
       if (!mounted) return;
-      setState(() { _msgs = list; _loading = false; });
+      setState(() { _msgs = list; _photos = photos; _loading = false; });
       await MessagesService.instance.markRead(peer.id);
       KCContext.instance.clearInboxUnread();
       _scrollToEnd();
       _subscribe();
       _subscribeTyping();
+      _subscribePhotos();
     } catch (e) {
       if (!mounted) return;
       setState(() { _loading = false; _error = e.toString().replaceFirst('Exception: ', ''); });
@@ -87,6 +96,18 @@ class _KCThreadState extends State<KCThread> {
       if (m.senderId != me) {
         MessagesService.instance.markRead(peerId);
       }
+    });
+  }
+
+  void _subscribePhotos() {
+    final me = AuthController.instance.userId;
+    if (me == null) return;
+    _photoSub = PhotoService.instance.subscribeIncoming(me, (p) {
+      if (!mounted) return;
+      if (p.senderId != _peerId) return;       // ignore photos from someone else
+      if (_photos.any((x) => x.id == p.id)) return;
+      setState(() => _photos = [..._photos, p]);
+      _scrollToEnd();
     });
   }
 
@@ -138,6 +159,53 @@ class _KCThreadState extends State<KCThread> {
             duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
       }
     });
+  }
+
+  Future<void> _pickAndSendPhoto() async {
+    final peerId = _peerId;
+    if (peerId == null) return;
+    final ctx = KCContext.instance;
+
+    final source = await showModalBottomSheet<ImageSource?>(
+      context: context, backgroundColor: KC.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sCtx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const SizedBox(height: 8),
+        Container(width: 38, height: 4, decoration: BoxDecoration(
+          color: KC.border, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 14),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Text('Fotoğraf gönder', style: kcSora(17, w: FontWeight.w700))),
+        const SizedBox(height: 6),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Text('Karşı taraf yalnızca 1 kez görüntüleyebilecek.',
+            style: kcManrope(12.5, color: KC.muted))),
+        const SizedBox(height: 14),
+        ListTile(leading: const Icon(Icons.photo_library_rounded, color: KC.accent),
+          title: Text('Galeriden seç', style: kcManrope(14, w: FontWeight.w600)),
+          onTap: () => Navigator.pop(sCtx, ImageSource.gallery)),
+        ListTile(leading: const Icon(Icons.camera_alt_rounded, color: KC.accent),
+          title: Text('Kamera ile çek', style: kcManrope(14, w: FontWeight.w600)),
+          onTap: () => Navigator.pop(sCtx, ImageSource.camera)),
+        const SizedBox(height: 12),
+      ])),
+    );
+
+    if (source == null || !mounted) return;
+    try {
+      final picked = await PhotoService.instance.pick(source: source);
+      if (picked == null) return;
+      ctx.toast('📷 Gönderiliyor...');
+      final created = await PhotoService.instance.send(
+        receiverId: peerId, bytes: picked.bytes, mime: picked.mime,
+      );
+      if (!mounted) return;
+      setState(() => _photos = [..._photos, created]);
+      _scrollToEnd();
+      ctx.toast('✅ Fotoğraf gönderildi (1 kez göster)');
+    } catch (e) {
+      ctx.toast('Fotoğraf gönderilemedi: ${e.toString().split('\n').first}');
+    }
   }
 
   Future<void> _send() async {
@@ -233,15 +301,10 @@ class _KCThreadState extends State<KCThread> {
               : _error != null
                   ? Center(child: Padding(padding: const EdgeInsets.all(20),
                       child: Text(_error!, style: kcManrope(14, color: KC.danger))))
-                  : _msgs.isEmpty
+                  : (_msgs.isEmpty && _photos.isEmpty)
                       ? Center(child: Text('İlk mesajı sen at',
                           style: kcManrope(14, color: KC.muted)))
-                      : ListView.builder(
-                          controller: _scroll,
-                          padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-                          itemCount: _msgs.length,
-                          itemBuilder: (_, i) => _bubble(_msgs[i], _msgs[i].senderId == me),
-                        ),
+                      : _buildTimeline(me),
         ),
         Container(
           padding: EdgeInsets.fromLTRB(14, 10, 14, MediaQuery.of(context).padding.bottom + 18),
@@ -250,6 +313,19 @@ class _KCThreadState extends State<KCThread> {
             border: Border(top: BorderSide(color: KC.border)),
           ),
           child: Row(children: [
+            GestureDetector(
+              onTap: _pickAndSendPhoto,
+              child: Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: KC.surface2, shape: BoxShape.circle,
+                  border: Border.all(color: KC.border),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(Icons.image_rounded, color: KC.accent, size: 20),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: Container(
                 height: 46,
@@ -289,6 +365,99 @@ class _KCThreadState extends State<KCThread> {
     );
   }
 
+  Widget _buildTimeline(String? me) {
+    final items = <_ThreadItem>[
+      for (final m in _msgs)   _ThreadItem.msg(m,   m.senderId == me),
+      for (final p in _photos) _ThreadItem.photo(p, p.senderId == me),
+    ]..sort((a, b) => a.at.compareTo(b.at));
+    return ListView.builder(
+      controller: _scroll,
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+      itemCount: items.length,
+      itemBuilder: (_, i) {
+        final it = items[i];
+        if (it.message != null) return _bubble(it.message!, it.fromMe);
+        return _photoBubble(it.photo!, it.fromMe);
+      },
+    );
+  }
+
+  Widget _photoBubble(ChatPhoto p, bool me) {
+    final viewed = p.isViewed;
+    final blocked = p.blocked;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Align(
+        alignment: me ? Alignment.centerRight : Alignment.centerLeft,
+        child: GestureDetector(
+          onTap: () async {
+            if (me) return; // sender can't re-view
+            if (blocked) {
+              KCContext.instance.toast('Fotoğraf moderasyon tarafından engellendi');
+              return;
+            }
+            if (viewed) {
+              KCContext.instance.toast('Bu fotoğraf zaten görüntülendi');
+              return;
+            }
+            await KCPhotoViewer.open(context, p.id);
+            if (!mounted) return;
+            setState(() {
+              _photos = _photos.map((x) => x.id == p.id ? ChatPhoto(
+                id: x.id, senderId: x.senderId, receiverId: x.receiverId,
+                storagePath: x.storagePath, nsfwScore: x.nsfwScore,
+                blocked: x.blocked, viewedAt: DateTime.now(), createdAt: x.createdAt,
+              ) : x).toList();
+            });
+          },
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                gradient: me ? KC.grad : null,
+                color: me ? null : KC.surface2,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(20),
+                  topRight: const Radius.circular(20),
+                  bottomLeft: Radius.circular(me ? 20 : 6),
+                  bottomRight: Radius.circular(me ? 6 : 20),
+                ),
+                border: me ? null : Border.all(color: KC.border),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: (me ? Colors.white : KC.accent).withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(12)),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    blocked ? Icons.block_rounded
+                      : viewed ? Icons.visibility_off_rounded
+                      : Icons.image_rounded,
+                    color: me ? Colors.white : KC.accent, size: 22,
+                  )),
+                const SizedBox(width: 11),
+                Flexible(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(
+                    me ? 'Fotoğraf gönderildi' : (blocked ? 'Engellendi'
+                      : viewed ? 'Görüntülendi' : 'Fotoğraf • dokun → 1 kez göster'),
+                    style: kcManrope(13.5, w: FontWeight.w700, color: me ? Colors.white : KC.text),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    me ? 'Karşı taraf 1 kez görür' : (viewed ? '' : 'Tek seferlik'),
+                    style: kcManrope(11.5, color: (me ? Colors.white : KC.muted).withValues(alpha: 0.85)),
+                  ),
+                ])),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _bubble(Message m, bool me) => Padding(
     padding: const EdgeInsets.only(bottom: 9),
     child: Align(
@@ -314,6 +483,16 @@ class _KCThreadState extends State<KCThread> {
       ),
     ),
   );
+}
+
+class _ThreadItem {
+  _ThreadItem._({this.message, this.photo, required this.fromMe, required this.at});
+  factory _ThreadItem.msg(Message m, bool fromMe)   => _ThreadItem._(message: m, fromMe: fromMe, at: m.createdAt);
+  factory _ThreadItem.photo(ChatPhoto p, bool fromMe) => _ThreadItem._(photo:   p, fromMe: fromMe, at: p.createdAt);
+  final Message? message;
+  final ChatPhoto? photo;
+  final bool fromMe;
+  final DateTime at;
 }
 
 class _TypingIndicator extends StatefulWidget {
