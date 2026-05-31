@@ -26,7 +26,11 @@ const SUPABASE_JWT_SECRET       = process.env.SUPABASE_JWT_SECRET       || '';
 
 const supabaseEnabled = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SUPABASE_JWT_SECRET;
 const supabase = supabaseEnabled
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+      // Node 20 has no native WebSocket; supabase-js v2 realtime needs one.
+      realtime: { transport: WebSocket },
+    })
   : null;
 
 if (!supabaseEnabled) {
