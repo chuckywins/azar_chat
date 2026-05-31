@@ -1,9 +1,16 @@
 import 'package:flutter/foundation.dart';
 
 class AppConfig {
+  /// All public-safe build-time configuration.
+  ///
   /// Override at build time:
-  ///   flutter run --dart-define=AZAR_WS_URL=wss://your-server.fly.dev
-  static const String _envWsUrl = String.fromEnvironment('AZAR_WS_URL');
+  ///   flutter build web \
+  ///     --dart-define=AZAR_WS_URL=wss://ws.klslog.com \
+  ///     --dart-define=SUPABASE_URL=https://xxx.supabase.co \
+  ///     --dart-define=SUPABASE_ANON_KEY=eyJ...
+  static const String _envWsUrl       = String.fromEnvironment('AZAR_WS_URL');
+  static const String supabaseUrl     = String.fromEnvironment('SUPABASE_URL');
+  static const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
   static String get signalingUrl {
     if (_envWsUrl.isNotEmpty) return _envWsUrl;
@@ -11,4 +18,6 @@ class AppConfig {
     // Android emulator loopback to host machine.
     return 'ws://10.0.2.2:9090';
   }
+
+  static bool get hasSupabase => supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 }
