@@ -7,6 +7,7 @@ import 'config.dart';
 import 'screens/in_call_screen.dart';
 import 'screens/landing_screen.dart';
 import 'screens/matching_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'state/app_controller.dart';
 import 'theme.dart';
 
@@ -15,12 +16,14 @@ Future<void> main() async {
   await AuthController.instance.bootstrap();
   final app = AppController();
   await app.bootstrap();
-  runApp(AzarApp(app: app));
+  final seenOnboarding = await hasSeenOnboarding();
+  runApp(AzarApp(app: app, seenOnboarding: seenOnboarding));
 }
 
 class AzarApp extends StatelessWidget {
-  const AzarApp({super.key, required this.app});
+  const AzarApp({super.key, required this.app, required this.seenOnboarding});
   final AppController app;
+  final bool seenOnboarding;
 
   @override
   Widget build(BuildContext context) {
@@ -28,14 +31,15 @@ class AzarApp extends StatelessWidget {
       title: 'kerochat',
       debugShowCheckedModeBanner: false,
       theme: buildAzarTheme(),
-      home: _Root(app: app),
+      home: _Root(app: app, seenOnboarding: seenOnboarding),
     );
   }
 }
 
 class _Root extends StatefulWidget {
-  const _Root({required this.app});
+  const _Root({required this.app, required this.seenOnboarding});
   final AppController app;
+  final bool seenOnboarding;
 
   @override
   State<_Root> createState() => _RootState();
@@ -43,6 +47,7 @@ class _Root extends StatefulWidget {
 
 class _RootState extends State<_Root> {
   final _auth = AuthController.instance;
+  late bool _onboarded = widget.seenOnboarding;
 
   @override
   void initState() {
@@ -63,6 +68,11 @@ class _RootState extends State<_Root> {
   @override
   Widget build(BuildContext context) {
     if (!AppConfig.hasSupabase) return const _ConfigMissingScreen();
+
+    if (!_onboarded) {
+      return OnboardingScreen(onDone: () => setState(() => _onboarded = true));
+    }
+
     if (_auth.mode == AuthMode.signedOut || _auth.mode == AuthMode.uninitialized) {
       return LoginScreen(controller: _auth);
     }

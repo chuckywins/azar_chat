@@ -5,6 +5,7 @@ import '../admin/admin_screen.dart';
 import '../auth/auth_controller.dart';
 import '../state/app_controller.dart';
 import '../theme.dart';
+import 'profile_screen.dart';
 
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key, required this.controller, required this.onStart});
@@ -111,11 +112,28 @@ class _LandingScreenState extends State<LandingScreen> {
             ),
           ),
         const SizedBox(width: 8),
-        _iconChip(
-          icon: Icons.logout_rounded,
-          onTap: () async => auth.signOut(),
-        ),
+        _profileChip(context, auth),
       ],
+    );
+  }
+
+  Widget _profileChip(BuildContext context, AuthController auth) {
+    final name = auth.profile?.nickname ?? auth.displayName ?? 'Misafir';
+    final initial = name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?';
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      ),
+      child: Container(
+        width: 34, height: 34,
+        decoration: BoxDecoration(
+          gradient: AzarPalette.brandGradient,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Text(initial,
+            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+      ),
     );
   }
 
@@ -137,22 +155,6 @@ class _LandingScreenState extends State<LandingScreen> {
             Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _iconChip({required IconData icon, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 34, height: 34,
-        decoration: BoxDecoration(
-          color: AzarPalette.surfaceHigh,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AzarPalette.line),
-        ),
-        alignment: Alignment.center,
-        child: Icon(icon, color: AzarPalette.textDim, size: 16),
       ),
     );
   }

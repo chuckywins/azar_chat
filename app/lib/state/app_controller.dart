@@ -9,6 +9,13 @@ import '../signaling/signaling.dart';
 import '../webrtc/media.dart';
 import '../webrtc/peer.dart';
 
+class ChatMessage {
+  ChatMessage({required this.text, required this.fromMe, required this.at});
+  final String text;
+  final bool fromMe;
+  final DateTime at;
+}
+
 enum AppPhase {
   idle,        // before pressing start
   connecting,  // opening WS / getUserMedia
@@ -35,6 +42,10 @@ class AppController extends ChangeNotifier {
   String? peerId;
   String? peerName;
   String? errorMessage;
+
+  /// In-call chat (per match — cleared between matches).
+  final List<ChatMessage> chatMessages = [];
+  int unreadChatCount = 0;
 
   String displayName = 'Misafir';
   String gender = 'X';      // M | F | X
@@ -178,9 +189,30 @@ class AppController extends ChangeNotifier {
           _setPhase(AppPhase.error);
         }
       },
+      onChatMessage: (text) {
+        chatMessages.add(ChatMessage(text: text, fromMe: false, at: DateTime.now()));
+        unreadChatCount += 1;
+        notifyListeners();
+      },
     );
     await _peer!.init(initiator: initiator);
+    chatMessages.clear();
+    unreadChatCount = 0;
     _setPhase(AppPhase.inCall);
+  }
+
+  void sendChat(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return;
+    _peer?.sendChat(t);
+    chatMessages.add(ChatMessage(text: t, fromMe: true, at: DateTime.now()));
+    notifyListeners();
+  }
+
+  void clearUnreadChat() {
+    if (unreadChatCount == 0) return;
+    unreadChatCount = 0;
+    notifyListeners();
   }
 
   void _teardownPeer() {

@@ -13,6 +13,7 @@ class PeerSession {
     required this.onSignal,
     required this.onRemoteStream,
     required this.onStateChange,
+    required this.onChatMessage,
   });
 
   final String peerId;
@@ -23,8 +24,10 @@ class PeerSession {
   final void Function(Map<String, dynamic> payload) onSignal;
   final void Function(MediaStream stream) onRemoteStream;
   final void Function(RTCPeerConnectionState state) onStateChange;
+  final void Function(String text) onChatMessage;
 
   RTCPeerConnection? _pc;
+  RTCDataChannel? _chat;
   bool _makingOffer = false;
   bool _ignoreOffer = false;
   bool _disposed = false;
@@ -71,15 +74,39 @@ class PeerSession {
       }
     };
 
+    _pc!.onDataChannel = (channel) {
+      if (channel.label == 'chat') _bindChat(channel);
+    };
+
     if (initiator) {
-      // Kick off the first offer; onRenegotiationNeeded will fire from addTrack.
-      // Some platforms don't auto-fire — force one offer just in case.
+      // Create the chat channel on the initiator side; offer will be triggered automatically.
+      final dc = await _pc!.createDataChannel(
+        'chat',
+        RTCDataChannelInit()..ordered = true,
+      );
+      _bindChat(dc);
+
       try {
         final offer = await _pc!.createOffer();
         await _pc!.setLocalDescription(offer);
         onSignal({'kind': 'offer', 'sdp': offer.sdp, 'sdpType': offer.type});
       } catch (_) {}
     }
+  }
+
+  void _bindChat(RTCDataChannel channel) {
+    _chat = channel;
+    channel.onMessage = (msg) {
+      if (_disposed) return;
+      onChatMessage(msg.text);
+    };
+  }
+
+  void sendChat(String text) {
+    final c = _chat;
+    if (c == null) return;
+    if (c.state != RTCDataChannelState.RTCDataChannelOpen) return;
+    c.send(RTCDataChannelMessage(text));
   }
 
   Future<void> handleSignal(Map<String, dynamic> payload) async {
@@ -120,9 +147,9 @@ class PeerSession {
 
   Future<void> dispose() async {
     _disposed = true;
-    try {
-      await _pc?.close();
-    } catch (_) {}
+    try { await _chat?.close(); } catch (_) {}
+    _chat = null;
+    try { await _pc?.close(); } catch (_) {}
     _pc = null;
   }
 }

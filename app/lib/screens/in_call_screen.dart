@@ -68,19 +68,26 @@ class InCallScreen extends StatelessWidget {
             ),
           ),
 
-          // Top-left peer chip + report button
+          // Top-left peer chip + chat + report
           Positioned(
-            top: topPad + 14, left: 16,
+            top: topPad + 14, left: 16, right: 130,
             child: Row(
               children: [
-                _peerChip(context, controller.peerName ?? 'Yabancı')
-                    .animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
+                Flexible(
+                  child: _peerChip(context, controller.peerName ?? 'Yabancı')
+                      .animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
+                ),
+                const SizedBox(width: 8),
+                _glassChatBtn(
+                  unread: controller.unreadChatCount,
+                  onTap: () => _showChatSheet(context, controller),
+                ).animate().fadeIn(duration: 400.ms, delay: 80.ms),
                 const SizedBox(width: 8),
                 _glassIconBtn(
                   icon: Icons.flag_outlined,
                   color: AzarPalette.danger,
                   onTap: () => _showReportSheet(context, controller),
-                ).animate().fadeIn(duration: 400.ms, delay: 100.ms),
+                ).animate().fadeIn(duration: 400.ms, delay: 140.ms),
               ],
             ),
           ),
@@ -189,6 +196,45 @@ class InCallScreen extends StatelessWidget {
     );
   }
 
+  Widget _glassChatBtn({required int unread, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+              color: AzarPalette.surface.withValues(alpha: 0.75),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AzarPalette.secondary.withValues(alpha: 0.45)),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.chat_bubble_outline_rounded, color: AzarPalette.secondary, size: 16),
+          ),
+          if (unread > 0)
+            Positioned(
+              top: -4, right: -4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                decoration: BoxDecoration(
+                  gradient: AzarPalette.brandGradient,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AzarPalette.bg, width: 1.5),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  unread > 9 ? '9+' : '$unread',
+                  style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _ctrlBtn({
     required IconData icon,
     required bool on,
@@ -268,6 +314,241 @@ class _SwipeNextButton extends StatelessWidget {
         icon: Icons.skip_next_rounded,
         height: 56,
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// Chat bottom sheet
+// ============================================================================
+
+Future<void> _showChatSheet(BuildContext context, AppController controller) async {
+  controller.clearUnreadChat();
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (ctx) => _ChatSheet(controller: controller),
+  );
+  controller.clearUnreadChat();
+}
+
+class _ChatSheet extends StatefulWidget {
+  const _ChatSheet({required this.controller});
+  final AppController controller;
+
+  @override
+  State<_ChatSheet> createState() => _ChatSheetState();
+}
+
+class _ChatSheetState extends State<_ChatSheet> {
+  final _input = TextEditingController();
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onChange);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onChange);
+    _input.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onChange() {
+    widget.controller.clearUnreadChat();
+    if (mounted) {
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) => _toBottom());
+    }
+  }
+
+  void _toBottom() {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(_scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+  }
+
+  void _send() {
+    final t = _input.text.trim();
+    if (t.isEmpty) return;
+    widget.controller.sendChat(t);
+    _input.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _toBottom());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inset = MediaQuery.of(context).viewInsets.bottom;
+    final h = MediaQuery.of(context).size.height * 0.7;
+    final msgs = widget.controller.chatMessages;
+    return Padding(
+      padding: EdgeInsets.only(bottom: inset),
+      child: Container(
+        height: h,
+        decoration: const BoxDecoration(
+          gradient: AzarPalette.surfaceGradient,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: AzarPalette.line)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: AzarPalette.line, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: AzarPalette.secondary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.chat_bubble_outline_rounded, color: AzarPalette.secondary, size: 16),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Sohbet • ${widget.controller.peerName ?? "Yabancı"}',
+                      style: const TextStyle(color: AzarPalette.text, fontSize: 15, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: AzarPalette.textDim, size: 20),
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  ),
+                ],
+              ),
+            ),
+            Container(height: 1, color: AzarPalette.line),
+            Expanded(
+              child: msgs.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 56, height: 56,
+                            decoration: BoxDecoration(
+                              color: AzarPalette.surfaceHigh,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.chat_outlined, color: AzarPalette.textDim, size: 24),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text('İlk mesajı sen at',
+                              style: TextStyle(color: AzarPalette.textDim, fontSize: 14)),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      itemCount: msgs.length,
+                      itemBuilder: (_, i) {
+                        final m = msgs[i];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Align(
+                            alignment: m.fromMe ? Alignment.centerRight : Alignment.centerLeft,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  gradient: m.fromMe ? AzarPalette.brandGradient : null,
+                                  color: m.fromMe ? null : AzarPalette.surfaceHigh,
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(18),
+                                    topRight: const Radius.circular(18),
+                                    bottomLeft: Radius.circular(m.fromMe ? 18 : 4),
+                                    bottomRight: Radius.circular(m.fromMe ? 4 : 18),
+                                  ),
+                                ),
+                                child: Text(
+                                  m.text,
+                                  style: TextStyle(
+                                    color: m.fromMe ? Colors.white : AzarPalette.text,
+                                    fontSize: 14.5, height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 10, 14),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: AzarPalette.line)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _input,
+                      onSubmitted: (_) => _send(),
+                      style: const TextStyle(color: AzarPalette.text, fontSize: 14.5),
+                      cursorColor: AzarPalette.primary,
+                      decoration: InputDecoration(
+                        hintText: 'Mesaj yaz...',
+                        hintStyle: const TextStyle(color: AzarPalette.textFaint),
+                        filled: true,
+                        fillColor: AzarPalette.surfaceHigh,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(22),
+                          borderSide: BorderSide(color: AzarPalette.line),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(22),
+                          borderSide: BorderSide(color: AzarPalette.line),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(22),
+                          borderSide: BorderSide(color: AzarPalette.primary, width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _send,
+                    child: Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        gradient: AzarPalette.brandGradient,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(color: AzarPalette.primary.withValues(alpha: 0.4), blurRadius: 16, spreadRadius: -3),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
