@@ -111,6 +111,8 @@ async function isBanned(userId) {
 
 function compatible(a, b) {
   if (a.id === b.id) return false;
+  // Same authenticated user with two sockets — don't match with self.
+  if (a.userId && b.userId && a.userId === b.userId) return false;
   if (a.peerGender !== 'any' && b.gender !== a.peerGender) return false;
   if (b.peerGender !== 'any' && a.gender !== b.peerGender) return false;
   return true;
