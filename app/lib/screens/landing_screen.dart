@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../admin/admin_screen.dart';
+import '../auth/auth_controller.dart';
 import '../state/app_controller.dart';
 import '../theme.dart';
 
@@ -77,13 +79,41 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   Widget _header(BuildContext context) {
+    final auth = AuthController.instance;
     return Row(
       children: [
         Container(width: 12, height: 12, color: AzarPalette.accent),
         const SizedBox(width: 10),
-        Text('azar_chat', style: Theme.of(context).textTheme.labelLarge),
+        Text('kerochat', style: Theme.of(context).textTheme.labelLarge),
         const Spacer(),
-        Text('v0.1', style: Theme.of(context).textTheme.bodySmall),
+        if (auth.isModerator)
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminScreen()),
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(border: Border.all(color: AzarPalette.accent)),
+              child: Text('ADMIN',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AzarPalette.accent,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w600,
+                      )),
+            ),
+          )
+        else
+          Text('v0.2', style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(width: 10),
+        GestureDetector(
+          onTap: () async {
+            await auth.signOut();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            child: Icon(Icons.logout, size: 14, color: AzarPalette.textDim),
+          ),
+        ),
       ],
     );
   }

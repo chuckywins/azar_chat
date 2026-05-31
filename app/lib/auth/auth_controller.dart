@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
+import 'profile.dart';
 
 enum AuthMode {
   uninitialized,  // Supabase not configured yet
@@ -22,6 +23,7 @@ class AuthController extends ChangeNotifier {
   StreamSubscription<AuthState>? _sub;
   AuthMode mode = AuthMode.uninitialized;
   String? lastError;
+  Profile? profile;
 
   SupabaseClient? get _client => AppConfig.hasSupabase ? Supabase.instance.client : null;
   User? get user => _client?.auth.currentUser;
@@ -32,6 +34,8 @@ class AuthController extends ChangeNotifier {
       user?.email;
   bool get isAnonymous => user?.isAnonymous ?? false;
   bool get isSignedIn => user != null;
+  bool get isAdmin => profile?.isAdmin ?? false;
+  bool get isModerator => profile?.isModerator ?? false;
 
   Future<void> bootstrap() async {
     if (_initialized) return;
@@ -57,12 +61,30 @@ class AuthController extends ChangeNotifier {
     final u = _client?.auth.currentUser;
     if (u == null) {
       mode = AuthMode.signedOut;
+      profile = null;
     } else if (u.isAnonymous) {
       mode = AuthMode.anonymous;
     } else {
       mode = AuthMode.authenticated;
     }
     notifyListeners();
+    if (u != null) {
+      // fetch fresh profile in background
+      loadProfile();
+    }
+  }
+
+  Future<void> loadProfile() async {
+    final c = _client;
+    final uid = userId;
+    if (c == null || uid == null) return;
+    try {
+      final row = await c.from('profiles').select().eq('id', uid).maybeSingle();
+      if (row != null) {
+        profile = Profile.fromJson(row);
+        notifyListeners();
+      }
+    } catch (_) {/* profile may not exist yet — trigger creates it */}
   }
 
   Future<void> signInAnonymously() async {
