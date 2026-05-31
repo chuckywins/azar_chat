@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/gift_service.dart';
+import '../services/messages_service.dart';
 import '../state/app_controller.dart';
 import 'mock_data.dart';
 import 'real_data.dart';
@@ -51,6 +52,11 @@ class KCContext extends ChangeNotifier {
   Timer? _giftBurstTimer;
   String? _giftSubscribedFor;
   RealtimeChannel? _giftChannel;
+
+  /// Set when an inbox listener has been wired for the current authed user.
+  String? _inboxSubscribedFor;
+  RealtimeChannel? _inboxChannel;
+  int unreadInbox = 0;
 
   void setTab(String t) {
     if (t == 'home' || t == 'chats' || t == 'profile') {
@@ -137,6 +143,33 @@ class KCContext extends ChangeNotifier {
     setTab('home');
   }
 
+  /// Wire up a global inbox listener so the user gets toasts even when not
+  /// inside the thread of that peer.  Idempotent — re-call after auth changes.
+  void ensureInboxSubscribed() {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    if (_inboxSubscribedFor == uid && _inboxChannel != null) return;
+    _inboxChannel?.unsubscribe();
+    _inboxSubscribedFor = uid;
+    _inboxChannel = MessagesService.instance.subscribeInbox(uid, (m) {
+      // If the user is already in this peer's thread, mark read + skip toast.
+      if (activeScreen == 'thread' && chatUser?.id == m.senderId) {
+        MessagesService.instance.markRead(m.senderId);
+        return;
+      }
+      unreadInbox += 1;
+      final preview = m.body.length > 60 ? '${m.body.substring(0, 60)}…' : m.body;
+      toast('💬 Yeni mesaj: $preview');
+      notifyListeners();
+    });
+  }
+
+  void clearInboxUnread() {
+    if (unreadInbox == 0) return;
+    unreadInbox = 0;
+    notifyListeners();
+  }
+
   void _subscribeIncomingGifts() {
     final uid = app.peerUserId == null ? null : Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) return;
@@ -192,6 +225,7 @@ class KCContext extends ChangeNotifier {
     _toastTimer?.cancel();
     _giftBurstTimer?.cancel();
     _giftChannel?.unsubscribe();
+    _inboxChannel?.unsubscribe();
     app.removeListener(_onAppChange);
     app.dispose();
     super.dispose();

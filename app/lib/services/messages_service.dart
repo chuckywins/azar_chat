@@ -87,19 +87,48 @@ class MessagesService {
   /// Returns a broadcast stream of newly-inserted Message rows.
   RealtimeChannel subscribeThread(String peerId, void Function(Message) onInsert) {
     final me = _c.auth.currentUser?.id;
-    return _c.channel('thread-$peerId')
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    return _c.channel('thread-$peerId-$ts')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
           table: 'messages',
           callback: (payload) {
             final m = Message.fromJson(payload.newRecord);
-            // Only deliver messages that belong to this 1-to-1 conversation.
             final inPair = (m.senderId == peerId && m.receiverId == me) ||
                             (m.senderId == me && m.receiverId == peerId);
             if (inPair) onInsert(m);
           },
         )
         .subscribe();
+  }
+
+  /// Listen for ALL incoming messages addressed to the current user.
+  /// Used by KCContext for toast notifications + unread counters across screens.
+  RealtimeChannel subscribeInbox(String myUserId, void Function(Message) onIncoming) {
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    return _c.channel('inbox-$myUserId-$ts')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'messages',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq, column: 'receiver_id', value: myUserId,
+          ),
+          callback: (payload) {
+            final m = Message.fromJson(payload.newRecord);
+            if (m.receiverId == myUserId) onIncoming(m);
+          },
+        )
+        .subscribe();
+  }
+
+  /// Broadcast a "typing" event over a per-pair channel. The peer subscribes
+  /// to the same channel name to receive these events (presence-style).
+  /// Send `typing=true` while user is typing; send `false` (or stop) when idle.
+  RealtimeChannel typingChannelFor(String myId, String peerId) {
+    // Stable pair key (order-independent).
+    final pair = ([myId, peerId]..sort()).join('-');
+    return _c.channel('typing-$pair', opts: const RealtimeChannelConfig(self: false));
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -23,17 +25,28 @@ class _KCThreadState extends State<KCThread> {
   bool _loading = true;
   String? _error;
   RealtimeChannel? _sub;
+  RealtimeChannel? _typingCh;
   String? _peerId;
+
+  bool _peerTyping = false;
+  Timer? _peerTypingTimer;
+  Timer? _myTypingDebounce;
+  bool _myTypingActive = false;
 
   @override
   void initState() {
     super.initState();
+    _input.addListener(_onInputChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   @override
   void dispose() {
+    _input.removeListener(_onInputChanged);
     _sub?.unsubscribe();
+    _typingCh?.unsubscribe();
+    _peerTypingTimer?.cancel();
+    _myTypingDebounce?.cancel();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -51,8 +64,10 @@ class _KCThreadState extends State<KCThread> {
       if (!mounted) return;
       setState(() { _msgs = list; _loading = false; });
       await MessagesService.instance.markRead(peer.id);
+      KCContext.instance.clearInboxUnread();
       _scrollToEnd();
       _subscribe();
+      _subscribeTyping();
     } catch (e) {
       if (!mounted) return;
       setState(() { _loading = false; _error = e.toString().replaceFirst('Exception: ', ''); });
@@ -64,12 +79,55 @@ class _KCThreadState extends State<KCThread> {
     if (peerId == null) return;
     _sub = MessagesService.instance.subscribeThread(peerId, (m) {
       if (!mounted) return;
+      // Don't add duplicates if we already appended manually.
+      if (_msgs.any((x) => x.id == m.id)) return;
       setState(() => _msgs = [..._msgs, m]);
       _scrollToEnd();
       final me = AuthController.instance.userId;
       if (m.senderId != me) {
         MessagesService.instance.markRead(peerId);
       }
+    });
+  }
+
+  void _subscribeTyping() {
+    final me = AuthController.instance.userId;
+    final peerId = _peerId;
+    if (me == null || peerId == null) return;
+    _typingCh = MessagesService.instance.typingChannelFor(me, peerId)
+      ..onBroadcast(event: 'typing', callback: (payload) {
+        final from = payload['from'] as String?;
+        final isTyping = payload['typing'] as bool? ?? false;
+        if (from == peerId) {
+          if (!mounted) return;
+          setState(() => _peerTyping = isTyping);
+          _peerTypingTimer?.cancel();
+          if (isTyping) {
+            _peerTypingTimer = Timer(const Duration(seconds: 4), () {
+              if (mounted) setState(() => _peerTyping = false);
+            });
+          }
+        }
+      })
+      ..subscribe();
+  }
+
+  void _onInputChanged() {
+    final me = AuthController.instance.userId;
+    final peerId = _peerId;
+    if (me == null || peerId == null || _typingCh == null) return;
+    final hasText = _input.text.trim().isNotEmpty;
+    if (hasText && !_myTypingActive) {
+      _myTypingActive = true;
+      _typingCh!.sendBroadcastMessage(event: 'typing',
+          payload: {'from': me, 'typing': true});
+    }
+    _myTypingDebounce?.cancel();
+    _myTypingDebounce = Timer(const Duration(seconds: 3), () {
+      if (!_myTypingActive) return;
+      _myTypingActive = false;
+      _typingCh?.sendBroadcastMessage(event: 'typing',
+          payload: {'from': me, 'typing': false});
     });
   }
 
@@ -86,9 +144,23 @@ class _KCThreadState extends State<KCThread> {
     final body = _input.text.trim();
     if (body.isEmpty || _peerId == null) return;
     _input.clear();
+    // Stop typing immediately on send.
+    if (_myTypingActive) {
+      _myTypingActive = false;
+      final me = AuthController.instance.userId;
+      if (me != null) {
+        _typingCh?.sendBroadcastMessage(event: 'typing',
+            payload: {'from': me, 'typing': false});
+      }
+    }
     try {
-      await MessagesService.instance.send(_peerId!, body);
-      // Realtime subscription will append the new row; no manual append needed.
+      final m = await MessagesService.instance.send(_peerId!, body);
+      if (!mounted) return;
+      // Manually append so it shows even if realtime echo is delayed.
+      if (!_msgs.any((x) => x.id == m.id)) {
+        setState(() => _msgs = [..._msgs, m]);
+      }
+      _scrollToEnd();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -133,7 +205,14 @@ class _KCThreadState extends State<KCThread> {
                     const SizedBox(width: 5),
                     KCFlag(country: p.country, size: 13),
                   ]),
-                  Text('Sohbet', style: kcManrope(12, w: FontWeight.w600, color: KC.muted)),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    child: _peerTyping
+                        ? const _TypingIndicator(key: ValueKey('t'))
+                        : Text('Sohbet',
+                            key: const ValueKey('s'),
+                            style: kcManrope(12, w: FontWeight.w600, color: KC.muted)),
+                  ),
                 ],
               ),
             ),
@@ -235,4 +314,51 @@ class _KCThreadState extends State<KCThread> {
       ),
     ),
   );
+}
+
+class _TypingIndicator extends StatefulWidget {
+  const _TypingIndicator({super.key});
+  @override
+  State<_TypingIndicator> createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<_TypingIndicator> with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat();
+
+  @override
+  void dispose() { _c.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedBuilder(
+          animation: _c,
+          builder: (_, _) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (i) {
+                final t = ((_c.value + i * 0.2) % 1.0);
+                final scale = 0.6 + 0.4 * (1 - (t * 2 - 1).abs());
+                return Padding(
+                  padding: EdgeInsets.only(right: i == 2 ? 0 : 3),
+                  child: Transform.scale(
+                    scale: scale,
+                    child: Container(
+                      width: 5, height: 5,
+                      decoration: const BoxDecoration(color: KC.accent, shape: BoxShape.circle),
+                    ),
+                  ),
+                );
+              }),
+            );
+          },
+        ),
+        const SizedBox(width: 7),
+        Text('yazıyor…', style: kcManrope(12, w: FontWeight.w600, color: KC.accent)),
+      ],
+    );
+  }
 }

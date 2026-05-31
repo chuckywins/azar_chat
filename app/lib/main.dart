@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'auth/auth_controller.dart';
 import 'config.dart';
 import 'kc/kc_app.dart';
+import 'kc/kc_context.dart';
 import 'kc/screens/onboarding.dart';
 import 'kc/tokens.dart';
 import 'services/presence_service.dart';
@@ -15,6 +16,7 @@ Future<void> main() async {
     final m = AuthController.instance.mode;
     if (m == AuthMode.anonymous || m == AuthMode.authenticated) {
       PresenceService.instance.start();
+      KCContext.instance.ensureInboxSubscribed();
     } else {
       PresenceService.instance.stop();
     }
@@ -22,6 +24,7 @@ Future<void> main() async {
   if (AuthController.instance.mode == AuthMode.anonymous ||
       AuthController.instance.mode == AuthMode.authenticated) {
     PresenceService.instance.start();
+    KCContext.instance.ensureInboxSubscribed();
   }
   runApp(const KeroApp());
 }
