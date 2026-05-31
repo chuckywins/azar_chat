@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'auth/auth_controller.dart';
-import 'auth/login_screen.dart';
 import 'config.dart';
 import 'kc/kc_app.dart';
+import 'kc/screens/onboarding.dart';
 import 'kc/tokens.dart';
 import 'services/presence_service.dart';
 
@@ -67,7 +67,7 @@ class _GateState extends State<_Gate> {
   Widget build(BuildContext context) {
     if (!AppConfig.hasSupabase) return const _ConfigMissingScreen();
     if (_auth.mode == AuthMode.signedOut || _auth.mode == AuthMode.uninitialized) {
-      return LoginScreen(controller: _auth);
+      return const Scaffold(backgroundColor: KC.bg, body: KCOnboarding());
     }
     return const KCApp();
   }

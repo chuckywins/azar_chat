@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../../services/friends_service.dart';
 import '../../services/gift_service.dart';
 import '../anim.dart';
 import '../atoms.dart';
@@ -75,13 +76,25 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
     }
   }
 
-  void _like() {
+  Future<void> _like() async {
     final ctx = KCContext.instance;
     final p = ctx.partner;
-    if (p == null) return;
-    if (_liked) { setState(() => _liked = false); return; }
+    if (p == null || _liked) return;
     setState(() => _liked = true);
-    ctx.toast('${p.name} adlı kişiyi beğendin 💖');
+    try {
+      final mutual = await FriendsService.instance.like(p.id);
+      if (!mounted) return;
+      if (mutual) {
+        ctx.toast('🎉 ${p.name} ile arkadaş oldunuz!');
+        ctx.addFriend(p);
+      } else {
+        ctx.toast('💖 Beğendin — karşı taraf da beğenirse arkadaş olursunuz');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _liked = false);
+      ctx.toast('Beğeni gönderilemedi: $e');
+    }
   }
 
   @override
