@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>kerochat — görüntülü sohbet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #08080b;
+    background-image: radial-gradient(120% 80% at 50% -10%, #1a1320 0%, #08080b 60%);
+    display: flex; align-items: center; justify-content: center; min-height: 100vh;
+    font-family: 'Manrope', system-ui, sans-serif; padding: 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  input::placeholder { color: var(--kc-muted); }
+
+  @keyframes kcFloat { from { transform: translateY(0) rotate(var(--r,0)); } to { transform: translateY(-14px) rotate(var(--r,0)); } }
+  @keyframes kcBob   { 0%,100% { transform: translateY(0); opacity: .6; } 50% { transform: translateY(-7px); opacity: 1; } }
+  @keyframes kcPulse { 0% { transform: scale(.45); opacity: .8; } 100% { transform: scale(1); opacity: 0; } }
+  @keyframes kcGiftFly { 0% { transform: translateX(-50%) translateY(0) scale(.4); opacity: 0; }
+    18% { transform: translateX(-50%) translateY(-10px) scale(1.15); opacity: 1; }
+    70% { opacity: 1; } 100% { transform: translateX(-50%) translateY(-260px) scale(.8); opacity: 0; } }
+  @keyframes kcFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes kcToast { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+  @keyframes kcScreenIn { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: scale(1); } }
+  .kc-screen { animation: kcScreenIn .28s cubic-bezier(.32,.72,0,1); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="kc-data.jsx"></script>
+<script type="text/babel" src="kc-ui.jsx"></script>
+<script type="text/babel" src="kc-screens-a.jsx"></script>
+<script type="text/babel" src="kc-screens-b.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "palette": ["#FF5E8A", "#B15BFF"],
+  "dark": true,
+  "corners": "Yumuşak",
+  "flow": "Buton"
+}/*EDITMODE-END*/;
+
+const RADIUS = {
+  'Sıkı':     { r: 12, lg: 16 },
+  'Yumuşak':  { r: 18, lg: 24 },
+  'Yuvarlak': { r: 26, lg: 32 },
+};
+const FLOW = { 'Buton': 'buton', 'Kaydır': 'kaydir', 'Otomatik': 'otomatik' };
+const PALETTE_OPTS = Object.values(KC_PALETTES).map(p => [p.a, p.b]);
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [screen, setScreen] = useState(() => localStorage.getItem('kc_screen') || 'onboarding');
+  const [coins, setCoins] = useState(1250);
+  const [filters, setFilters] = useState({ gender: 'all', country: 'all', lang: 'TR' });
+  const [partner, setPartner] = useState(null);
+  const [chatUser, setChatUser] = useState(null);
+  const [friends, setFriends] = useState([]);
+  const [toastMsg, setToastMsg] = useState(null);
+  const [lastTab, setLastTab] = useState('home');
+  const toastTimer = useRef(null);
+
+  useEffect(() => { localStorage.setItem('kc_screen', screen); }, [screen]);
+
+  const nav = (s) => {
+    if (s === 'home' || s === 'chats' || s === 'profile') setLastTab(s);
+    setScreen(s);
+  };
+  const toast = (msg) => {
+    setToastMsg(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastMsg(null), 2400);
+  };
+  const addCoins = (n) => setCoins(c => Math.max(0, c + n));
+  const addFriend = (u) => setFriends(f => f.find(x => x.id === u.id) ? f : [...f, u]);
+  const startMatch = () => setScreen('matching');
+  const openChat = (u) => { setChatUser(u); setScreen('thread'); };
+
+  // auto-advance matching → video
+  useEffect(() => {
+    if (screen !== 'matching') return;
+    const id = setTimeout(() => {
+      const pool = KC_USERS.filter(u => filters.gender === 'all' || u.g === filters.gender);
+      const pick = (pool.length ? pool : KC_USERS)[Math.floor(Math.random() * (pool.length || KC_USERS.length))];
+      setPartner(pick);
+      setScreen('video');
+    }, 2300);
+    return () => clearTimeout(id);
+  }, [screen, filters.gender]);
+
+  const ctx = {
+    nav, coins, addCoins, filters, setFilters, partner, setPartner, chatUser,
+    openChat, addFriend, friends, toast, startMatch, lastTab,
+    matchFlow: FLOW[t.flow] || 'buton',
+  };
+
+  // theme vars
+  const a = (t.palette && t.palette[0]) || '#FF5E8A';
+  const b = (t.palette && t.palette[1]) || '#B15BFF';
+  const rad = RADIUS[t.corners] || RADIUS['Yumuşak'];
+  const dark = t.dark;
+  const themeVars = dark ? {
+    '--kc-bg': '#0E0E13', '--kc-surface': '#17171F', '--kc-surface2': '#21212B',
+    '--kc-border': 'rgba(255,255,255,0.09)', '--kc-text': '#F4F4F7', '--kc-muted': 'rgba(244,244,247,0.55)',
+    '--kc-tab': 'rgba(20,20,27,0.78)',
+  } : {
+    '--kc-bg': '#F3F2F7', '--kc-surface': '#FFFFFF', '--kc-surface2': '#ECEAF1',
+    '--kc-border': 'rgba(0,0,0,0.09)', '--kc-text': '#16161D', '--kc-muted': 'rgba(22,22,30,0.55)',
+    '--kc-tab': 'rgba(255,255,255,0.82)',
+  };
+  const rootVars = {
+    ...themeVars,
+    '--kc-accent': a, '--kc-accent2': b,
+    '--kc-grad': `linear-gradient(135deg, ${a}, ${b})`,
+    '--kc-accent-sh': a + '99', '--kc-accent-soft': a + '26',
+    '--kc-radius': rad.r + 'px', '--kc-radius-lg': rad.lg + 'px',
+  };
+
+  const showTabs = ['home', 'chats', 'profile'].includes(screen);
+  const SCREENS = {
+    onboarding: KCOnboarding, home: KCHome, matching: KCMatching, video: KCVideoChat,
+    profile: KCProfile, store: KCStore, chats: KCChats, thread: KCThread,
+  };
+  const Screen = SCREENS[screen] || KCOnboarding;
+
+  return (
+    <React.Fragment>
+      <IOSDevice dark={dark}>
+        <div id="kc-root" style={{ ...rootVars, position: 'relative', width: '100%', height: '100%',
+          background: 'var(--kc-bg)', overflow: 'hidden', color: 'var(--kc-text)' }}>
+          <div key={screen} className="kc-screen" style={{ position: 'absolute', inset: 0 }}>
+            <Screen ctx={ctx} />
+          </div>
+          {showTabs && <KCTabBar active={screen} onNav={nav} />}
+          <KCToast msg={toastMsg} />
+        </div>
+      </IOSDevice>
+
+      <TweaksPanel>
+        <TweakSection label="Görünüm" />
+        <TweakColor label="Vurgu rengi" value={t.palette} options={PALETTE_OPTS}
+          onChange={(v) => setTweak('palette', v)} />
+        <TweakToggle label="Karanlık mod" value={t.dark} onChange={(v) => setTweak('dark', v)} />
+        <TweakRadio label="Köşeler" value={t.corners} options={['Sıkı', 'Yumuşak', 'Yuvarlak']}
+          onChange={(v) => setTweak('corners', v)} />
+        <TweakSection label="Eşleşme akışı" />
+        <TweakRadio label="Başlatma" value={t.flow} options={['Buton', 'Kaydır', 'Otomatik']}
+          onChange={(v) => setTweak('flow', v)} />
+        <TweakSection label="Demo" />
+        <TweakButton label="Başa dön (Onboarding)" onClick={() => nav('onboarding')} />
+      </TweaksPanel>
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

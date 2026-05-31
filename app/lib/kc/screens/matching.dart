@@ -1,0 +1,137 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '../anim.dart';
+import '../atoms.dart';
+import '../kc_context.dart';
+import '../mock_data.dart';
+import '../tokens.dart';
+
+class KCMatching extends StatefulWidget {
+  const KCMatching({super.key});
+
+  @override
+  State<KCMatching> createState() => _KCMatchingState();
+}
+
+class _KCMatchingState extends State<KCMatching> {
+  int _idx = 0;
+  Timer? _spinner;
+  Timer? _advance;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinner = Timer.periodic(const Duration(milliseconds: 420), (_) {
+      if (!mounted) return;
+      setState(() => _idx = (_idx + 1) % kcUsers.length);
+    });
+    _advance = Timer(const Duration(milliseconds: 2300), () {
+      if (!mounted) return;
+      final ctx = KCContext.instance;
+      final pool = kcUsers.where((u) => ctx.filters.gender == 'all' || u.gender == ctx.filters.gender).toList();
+      final pick = (pool.isNotEmpty ? pool : kcUsers)[Random().nextInt(pool.isNotEmpty ? pool.length : kcUsers.length)];
+      ctx.setPartner(pick);
+      ctx.setScreen('video');
+    });
+  }
+
+  @override
+  void dispose() {
+    _spinner?.cancel();
+    _advance?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ctx = KCContext.instance;
+    final f = ctx.filters;
+    final genderLabel = {'all': 'Herkes', 'k': 'Kadın', 'e': 'Erkek'}[f.gender]!;
+    final countryLabel = f.country == 'all' ? 'Tüm dünya' : f.country;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // dim self-cam background
+        const KCVideoFeed(user: kcMe, self: true, dim: true),
+        Container(color: const Color(0x9E08080C)),
+
+        // centered content
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 30),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // radar
+                SizedBox(
+                  width: 200, height: 200,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    alignment: Alignment.center,
+                    children: [
+                      KCPulseRing(color: KC.accent, delay: Duration.zero),
+                      const KCPulseRing(color: KC.accent, delay: Duration(milliseconds: 800)),
+                      const KCPulseRing(color: KC.accent, delay: Duration(milliseconds: 1600)),
+                      Center(
+                        child: Container(
+                          width: 96, height: 96,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 2),
+                            boxShadow: [BoxShadow(color: KC.accentSh, blurRadius: 40, spreadRadius: -4)],
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: KCVideoFeed(user: kcUsers[_idx]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 34),
+                Text('Eşleşme aranıyor…',
+                  style: kcSora(24, w: FontWeight.w700, color: Colors.white)),
+                const SizedBox(height: 8),
+                Text('Sana uygun biri bulunuyor',
+                  style: kcManrope(14.5, color: Colors.white.withValues(alpha: 0.65))),
+                const SizedBox(height: 22),
+                Wrap(
+                  spacing: 8, runSpacing: 8, alignment: WrapAlignment.center,
+                  children: [
+                    _tag(genderLabel),
+                    _tag(countryLabel),
+                    _tag('Çeviri: ${f.lang}'),
+                  ],
+                ),
+                const SizedBox(height: 40),
+              ],
+            ),
+          ),
+        ),
+
+        // cancel
+        Positioned(
+          left: 26, right: 26, bottom: 46,
+          child: KCButton(
+            label: 'Vazgeç',
+            variant: KCButtonVariant.glass,
+            onTap: () => KCContext.instance.setTab('home'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tag(String text) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        ),
+        child: Text(text, style: kcManrope(12.5, w: FontWeight.w600, color: Colors.white)),
+      );
+}
