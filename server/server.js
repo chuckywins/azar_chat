@@ -84,7 +84,11 @@ class Peer {
   }
 
   publicInfo() {
-    return { id: this.id, userId: this.userId, name: this.name, gender: this.gender };
+    return {
+      id: this.id, userId: this.userId,
+      name: this.name, gender: this.gender,
+      country: this.country,
+    };
   }
 }
 

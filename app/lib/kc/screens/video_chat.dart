@@ -26,6 +26,9 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
   Key? _giftFxKey;
   String? _giftFxGlyph;
 
+  bool _showIntro = true;
+  Timer? _introTimer;
+
   @override
   void initState() {
     super.initState();
@@ -36,11 +39,17 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
     GiftService.instance.catalog().then((list) {
       if (mounted) setState(() => _gifts = list);
     }).catchError((_) {});
+
+    // Match-intro overlay: ~2s reveal then fade to actual call.
+    _introTimer = Timer(const Duration(milliseconds: 2200), () {
+      if (mounted) setState(() => _showIntro = false);
+    });
   }
 
   @override
   void dispose() {
     _sec?.cancel();
+    _introTimer?.cancel();
     super.dispose();
   }
 
@@ -219,6 +228,23 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
             child: KCGiftRain(key: _giftFxKey!, glyph: _giftFxGlyph!),
           ),
 
+        // ── Match-intro reveal: peer card for ~2s before call begins
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: !_showIntro,
+            child: AnimatedOpacity(
+              opacity: _showIntro ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 450),
+              curve: Curves.easeOut,
+              child: _MatchIntroOverlay(
+                name: ctx.app.peerName ?? 'Yabancı',
+                country: ctx.app.peerCountry,
+                gender: ctx.app.peerGenderInfo,
+              ),
+            ),
+          ),
+        ),
+
         // incoming gift rain (receiver side — realtime from peer)
         if (ctx.incomingGiftBurst != null)
           Positioned.fill(
@@ -391,4 +417,123 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
       );
     });
   }
+}
+
+class _MatchIntroOverlay extends StatefulWidget {
+  const _MatchIntroOverlay({required this.name, this.country, this.gender});
+  final String name;
+  final String? country;
+  final String? gender;
+
+  @override
+  State<_MatchIntroOverlay> createState() => _MatchIntroOverlayState();
+}
+
+class _MatchIntroOverlayState extends State<_MatchIntroOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 700))..forward();
+
+  @override
+  void dispose() { _c.dispose(); super.dispose(); }
+
+  String _genderLabel(String? g) {
+    switch (g) {
+      case 'M': return 'Erkek';
+      case 'F': return 'Kadın';
+      default:  return 'Belirtilmedi';
+    }
+  }
+
+  String _flagFor(String? cc) {
+    if (cc == null || cc.length != 2) return '🌐';
+    final upper = cc.toUpperCase();
+    final base = 0x1F1E6 - 0x41;
+    return String.fromCharCode(base + upper.codeUnitAt(0))
+         + String.fromCharCode(base + upper.codeUnitAt(1));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, _) {
+        final t = Curves.easeOutCubic.transform(_c.value);
+        return Container(
+          color: Colors.black.withValues(alpha: 0.78 * t),
+          alignment: Alignment.center,
+          child: Opacity(
+            opacity: t,
+            child: Transform.scale(
+              scale: 0.86 + 0.14 * t,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: KC.accent.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: KC.accent.withValues(alpha: 0.5)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.bolt_rounded, color: KC.accent, size: 14),
+                      const SizedBox(width: 5),
+                      Text('Eşleşme bulundu',
+                        style: kcSora(12, w: FontWeight.w700, color: KC.accent, letter: 1)),
+                    ]),
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    width: 110, height: 110,
+                    decoration: BoxDecoration(
+                      gradient: KC.grad,
+                      shape: BoxShape.circle,
+                      boxShadow: [BoxShadow(
+                        color: KC.accent.withValues(alpha: 0.45),
+                        blurRadius: 38, spreadRadius: 2)],
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      widget.name.isEmpty ? '?' : widget.name.substring(0, 1).toUpperCase(),
+                      style: kcSora(44, w: FontWeight.w800, color: Colors.white, height: 1),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(widget.name, style: kcSora(26, w: FontWeight.w700, color: Colors.white)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 10, runSpacing: 8, alignment: WrapAlignment.center, children: [
+                    _chip(_flagFor(widget.country), widget.country?.toUpperCase() ?? 'Bilinmiyor'),
+                    _chip(widget.gender == 'F' ? '♀' : widget.gender == 'M' ? '♂' : '⚪', _genderLabel(widget.gender)),
+                  ]),
+                  const SizedBox(height: 24),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    SizedBox(width: 14, height: 14, child: CircularProgressIndicator(
+                      color: Colors.white.withValues(alpha: 0.65), strokeWidth: 2)),
+                    const SizedBox(width: 10),
+                    Text('Bağlantı kuruluyor…',
+                      style: kcManrope(13, color: Colors.white.withValues(alpha: 0.85))),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _chip(String emoji, String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Text(emoji, style: const TextStyle(fontSize: 16)),
+      const SizedBox(width: 7),
+      Text(label, style: kcSora(12.5, w: FontWeight.w700, color: Colors.white)),
+    ]),
+  );
 }

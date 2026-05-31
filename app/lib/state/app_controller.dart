@@ -49,6 +49,9 @@ class AppController extends ChangeNotifier {
   String? selfId;
   String? peerId;
   String? peerName;
+  String? peerCountry;
+  String? peerGenderInfo;
+  DateTime? matchedAt;
   String? errorMessage;
 
   /// In-call chat (per match — cleared between matches).
@@ -180,7 +183,10 @@ class AppController extends ChangeNotifier {
     final info = (msg['peerInfo'] as Map?)?.cast<String, dynamic>();
     peerId = pid;
     peerName = info?['name'] as String? ?? 'Yabancı';
+    peerCountry = info?['country'] as String?;
+    peerGenderInfo = info?['gender'] as String?;
     _peerUserId = info?['userId'] as String?;
+    matchedAt = DateTime.now();
 
     final localStream = _media.stream;
     if (localStream == null) return;
