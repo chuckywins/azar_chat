@@ -23,6 +23,7 @@ dependencies:
   http: ^1.2.2
   crypto: ^3.0.3
   image_picker: ^1.1.2
+  screen_protector: ^1.4.2+1
 
 dev_dependencies:
   flutter_test:

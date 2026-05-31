@@ -166,6 +166,55 @@ class _KCThreadState extends State<KCThread> {
     if (peerId == null) return;
     final ctx = KCContext.instance;
 
+    // 1) Big warning + confirm
+    final confirmed = await showDialog<bool>(
+      context: context, barrierDismissible: true,
+      builder: (dCtx) => Dialog(
+        backgroundColor: KC.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 26),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(width: 42, height: 42,
+                decoration: BoxDecoration(
+                  color: KC.accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12)),
+                alignment: Alignment.center,
+                child: const Icon(Icons.visibility_off_rounded, color: KC.accent, size: 22)),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Tek seferlik fotoğraf',
+                style: kcSora(17, w: FontWeight.w700))),
+            ]),
+            const SizedBox(height: 16),
+            _bullet('Karşı taraf yalnızca 1 kez görüntüleyebilir.'),
+            _bullet('Görüntülendikten sonra sunucudan kalıcı olarak silinir.'),
+            _bullet('Mobil cihazlarda ekran görüntüsü engellenir; alındığında foto otomatik kapanır.'),
+            _bullet('Tarayıcıda ekran görüntüsü tam engellenemez — fotoğraf üzerinde alıcının kimliği watermark olarak yer alır.'),
+            _bullet('Geri alınamaz. Göndermek istediğinden emin ol.'),
+            const SizedBox(height: 18),
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              TextButton(onPressed: () => Navigator.pop(dCtx, false),
+                child: Text('Vazgeç', style: kcManrope(14, w: FontWeight.w600, color: KC.muted))),
+              const SizedBox(width: 6),
+              GestureDetector(onTap: () => Navigator.pop(dCtx, true),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: const BoxDecoration(gradient: KC.grad,
+                    borderRadius: BorderRadius.all(Radius.circular(12))),
+                  child: Text('Anladım, devam',
+                    style: kcSora(13.5, w: FontWeight.w700, color: Colors.white)),
+                )),
+            ]),
+          ]),
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    // 2) Pick source
     final source = await showModalBottomSheet<ImageSource?>(
       context: context, backgroundColor: KC.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -175,12 +224,8 @@ class _KCThreadState extends State<KCThread> {
           color: KC.border, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 14),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 18),
-          child: Text('Fotoğraf gönder', style: kcSora(17, w: FontWeight.w700))),
-        const SizedBox(height: 6),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 18),
-          child: Text('Karşı taraf yalnızca 1 kez görüntüleyebilecek.',
-            style: kcManrope(12.5, color: KC.muted))),
-        const SizedBox(height: 14),
+          child: Text('Kaynak seç', style: kcSora(17, w: FontWeight.w700))),
+        const SizedBox(height: 8),
         ListTile(leading: const Icon(Icons.photo_library_rounded, color: KC.accent),
           title: Text('Galeriden seç', style: kcManrope(14, w: FontWeight.w600)),
           onTap: () => Navigator.pop(sCtx, ImageSource.gallery)),
@@ -207,6 +252,15 @@ class _KCThreadState extends State<KCThread> {
       ctx.toast('Fotoğraf gönderilemedi: ${e.toString().split('\n').first}');
     }
   }
+
+  Widget _bullet(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 7),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Padding(padding: EdgeInsets.only(top: 6, right: 9),
+        child: Icon(Icons.circle, size: 4, color: KC.muted)),
+      Expanded(child: Text(text, style: kcManrope(13, height: 1.42, color: KC.text))),
+    ]),
+  );
 
   Future<void> _send() async {
     final body = _input.text.trim();

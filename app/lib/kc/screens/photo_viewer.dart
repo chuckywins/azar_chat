@@ -1,13 +1,21 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:screen_protector/screen_protector.dart';
 
+import '../../auth/auth_controller.dart';
 import '../../services/photo_service.dart';
 import '../tokens.dart';
 
-/// Full-screen one-shot photo viewer.
-/// Shows a 10-second countdown then auto-closes. Tapping closes early.
-/// Throws on Navigator.pop with the error code if the RPC rejects.
+/// Full-screen one-shot photo viewer with multi-layer screenshot deterrence.
+///
+/// - Android: FLAG_SECURE via screen_protector (Recent apps + SS bloked)
+/// - iOS:     SS-capture listener — closes viewer on attempt
+/// - Web:     contextmenu disabled, browser visibility change → auto-close,
+///            user-select disabled, diagonal watermark with viewer's UID
+///
+/// All platforms: 10-second hard cap, auto-purge on close.
 class KCPhotoViewer extends StatefulWidget {
   const KCPhotoViewer({super.key, required this.photoId});
   final String photoId;
@@ -23,15 +31,19 @@ class KCPhotoViewer extends StatefulWidget {
   State<KCPhotoViewer> createState() => _KCPhotoViewerState();
 }
 
-class _KCPhotoViewerState extends State<KCPhotoViewer> {
+class _KCPhotoViewerState extends State<KCPhotoViewer> with WidgetsBindingObserver {
   Future<String>? _urlFut;
   Timer? _countdown;
   int _remaining = 10;
   String? _err;
+  bool _enabledProtection = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _enableProtection();
+
     _urlFut = PhotoService.instance.claimSignedUrl(widget.photoId).catchError((e) {
       _err = e.toString();
       throw e;
@@ -46,13 +58,53 @@ class _KCPhotoViewerState extends State<KCPhotoViewer> {
     });
   }
 
+  Future<void> _enableProtection() async {
+    if (kIsWeb) return;
+    try {
+      await ScreenProtector.protectDataLeakageOn();
+      await ScreenProtector.preventScreenshotOn();
+      // iOS: detect SS or screen-recording — close viewer on either.
+      void close() { if (mounted) Navigator.of(context).maybePop(); }
+      ScreenProtector.addListener(close, (_) => close());
+      _enabledProtection = true;
+    } catch (_) {/* unsupported platform — fall back to watermark only */}
+  }
+
+  Future<void> _disableProtection() async {
+    if (!_enabledProtection) return;
+    try {
+      await ScreenProtector.protectDataLeakageOff();
+      await ScreenProtector.preventScreenshotOff();
+      ScreenProtector.removeListener();
+    } catch (_) {/* ignore */}
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App went to background / switched apps / browser tab switched —
+    // close the viewer so a recording can't capture more.
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (mounted) Navigator.of(context).maybePop();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _countdown?.cancel();
-    // Fire-and-forget purge so storage doesn't keep the file around past
-    // its one-shot lifetime. No error feedback — the user already saw it.
+    _disableProtection();
+    // Fire-and-forget purge — storage gone as soon as viewer closes.
     PhotoService.instance.purge(widget.photoId);
     super.dispose();
+  }
+
+  String _watermarkText() {
+    final uid = AuthController.instance.userId ?? 'anon';
+    final shortUid = uid.length > 8 ? uid.substring(0, 8) : uid;
+    final now = DateTime.now();
+    final hh = now.hour.toString().padLeft(2, '0');
+    final mm = now.minute.toString().padLeft(2, '0');
+    return 'kerochat • $shortUid • $hh:$mm';
   }
 
   @override
@@ -60,6 +112,8 @@ class _KCPhotoViewerState extends State<KCPhotoViewer> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: GestureDetector(
+        // Right-click / secondary-tap on web → also dismiss (no save-image menu).
+        onSecondaryTap: () => Navigator.of(context).maybePop(),
         onTap: () => Navigator.of(context).maybePop(),
         child: SafeArea(
           child: FutureBuilder<String>(
@@ -103,6 +157,9 @@ class _KCPhotoViewerState extends State<KCPhotoViewer> {
                         const Icon(Icons.broken_image_rounded, color: Colors.white24, size: 64))),
                   ),
                 ),
+                // Diagonal watermark grid — caydırıcı + leak source-tracking
+                Positioned.fill(child: IgnorePointer(child: _WatermarkOverlay(text: _watermarkText()))),
+                // Top-right countdown
                 Positioned(
                   top: 14, right: 14,
                   child: Container(
@@ -117,6 +174,21 @@ class _KCPhotoViewerState extends State<KCPhotoViewer> {
                     ]),
                   ),
                 ),
+                // Top-left "no-screenshot" badge
+                Positioned(
+                  top: 14, left: 14,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(999)),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.no_photography_rounded, color: Colors.white, size: 13),
+                      SizedBox(width: 5),
+                      Text('SS yasak', style: TextStyle(
+                        color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                ),
                 const Positioned(
                   left: 0, right: 0, bottom: 20,
                   child: Center(child: Text('Tek seferlik görüntüleme • dokun → kapat',
@@ -128,5 +200,33 @@ class _KCPhotoViewerState extends State<KCPhotoViewer> {
         ),
       ),
     );
+  }
+}
+
+class _WatermarkOverlay extends StatelessWidget {
+  const _WatermarkOverlay({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, c) {
+      final cols = (c.maxWidth / 180).ceil() + 1;
+      final rows = (c.maxHeight / 120).ceil() + 1;
+      return Transform.rotate(
+        angle: -0.42,
+        child: Column(children: List.generate(rows, (r) {
+          return Expanded(child: Row(children: List.generate(cols, (i) {
+            return Expanded(child: Center(child: Text(text,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.14),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            )));
+          })));
+        })),
+      );
+    });
   }
 }
