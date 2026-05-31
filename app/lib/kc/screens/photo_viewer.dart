@@ -49,6 +49,9 @@ class _KCPhotoViewerState extends State<KCPhotoViewer> {
   @override
   void dispose() {
     _countdown?.cancel();
+    // Fire-and-forget purge so storage doesn't keep the file around past
+    // its one-shot lifetime. No error feedback — the user already saw it.
+    PhotoService.instance.purge(widget.photoId);
     super.dispose();
   }
 

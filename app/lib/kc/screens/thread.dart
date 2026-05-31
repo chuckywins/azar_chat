@@ -441,12 +441,12 @@ class _KCThreadState extends State<KCThread> {
                 Flexible(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                   Text(
                     me ? 'Fotoğraf gönderildi' : (blocked ? 'Engellendi'
-                      : viewed ? 'Görüntülendi' : 'Fotoğraf • dokun → 1 kez göster'),
+                      : viewed ? 'Görüntülendi & silindi' : 'Fotoğraf • dokun → 1 kez göster'),
                     style: kcManrope(13.5, w: FontWeight.w700, color: me ? Colors.white : KC.text),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    me ? 'Karşı taraf 1 kez görür' : (viewed ? '' : 'Tek seferlik'),
+                    me ? 'Karşı taraf 1 kez görür, sonra silinir' : (viewed ? 'Sunucudan kalıcı kaldırıldı' : 'Tek seferlik'),
                     style: kcManrope(11.5, color: (me ? Colors.white : KC.muted).withValues(alpha: 0.85)),
                   ),
                 ])),

@@ -117,6 +117,49 @@ $$;
 revoke all on function public.claim_chat_photo(uuid) from public, anon;
 grant execute on function public.claim_chat_photo(uuid) to authenticated;
 
+-- ── 3b) purge_chat_photo — deletes storage object + DB row ───────────
+-- Called by receiver right after viewing (PhotoViewer dispose) so the
+-- file does not sit on Storage past its one-shot lifetime.
+-- Admins/mods can purge anything (e.g. illegal content). Senders cannot
+-- purge — only the receiver after they viewed, or an admin.
+create or replace function public.purge_chat_photo(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_path     text;
+  v_receiver uuid;
+  v_viewed   timestamptz;
+  v_role     text;
+begin
+  select storage_path, receiver_id, viewed_at
+    into v_path, v_receiver, v_viewed
+    from public.chat_photos where id = p_id;
+
+  if v_path is null then return; end if;  -- already gone, idempotent
+
+  select role into v_role from public.profiles where id = auth.uid();
+  if not (
+    (v_receiver = auth.uid() and v_viewed is not null)
+    or v_role in ('admin', 'moderator')
+  ) then
+    raise exception 'not_authorized';
+  end if;
+
+  -- Wipe storage object (SECURITY DEFINER bypasses storage RLS).
+  delete from storage.objects
+    where bucket_id = 'chat-photos' and name = v_path;
+
+  -- Wipe DB row.
+  delete from public.chat_photos where id = p_id;
+end;
+$$;
+
+revoke all on function public.purge_chat_photo(uuid) from public, anon;
+grant execute on function public.purge_chat_photo(uuid) to authenticated;
+
 -- ── 4) Admin-only listing RPC for the moderation gallery ─────────────
 create or replace function public.admin_list_chat_photos(p_limit int default 100)
 returns table (

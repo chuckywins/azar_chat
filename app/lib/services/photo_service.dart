@@ -169,6 +169,14 @@ class PhotoService {
     await _c.from('chat_photos').delete().eq('id', photoId);
   }
 
+  /// Receiver-initiated purge after viewing. Best-effort: silently
+  /// swallows errors (the photo is already viewed, so user impact is nil).
+  Future<void> purge(String photoId) async {
+    try {
+      await _c.rpc('purge_chat_photo', params: {'p_id': photoId});
+    } catch (_) {/* best-effort */}
+  }
+
   String _short() {
     final n = DateTime.now().microsecondsSinceEpoch & 0xfffff;
     return n.toRadixString(36);
