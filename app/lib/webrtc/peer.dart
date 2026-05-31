@@ -16,6 +16,7 @@ class PeerSession {
     required this.onStateChange,
     required this.onChatMessage,
     this.onEmoji,
+    this.onGameMessage,
   });
 
   final String peerId;
@@ -28,6 +29,7 @@ class PeerSession {
   final void Function(RTCPeerConnectionState state) onStateChange;
   final void Function(String text) onChatMessage;
   final void Function(String emoji)? onEmoji;
+  final void Function(Map<String, dynamic> payload)? onGameMessage;
 
   RTCPeerConnection? _pc;
   RTCDataChannel? _chat;
@@ -111,23 +113,32 @@ class PeerSession {
       final j = jsonDecode(raw);
       if (j is Map<String, dynamic>) {
         final t = j['t'] as String?;
-        final v = j['v'] as String?;
-        if (t == 'c' && v != null) { onChatMessage(v); return; }
-        if (t == 'e' && v != null) { onEmoji?.call(v); return; }
+        final v = j['v'];
+        if (t == 'c' && v is String) { onChatMessage(v); return; }
+        if (t == 'e' && v is String) { onEmoji?.call(v); return; }
+        if (t == 'g' && v is Map)    { onGameMessage?.call(v.cast<String, dynamic>()); return; }
       }
     } catch (_) {/* not JSON */}
     onChatMessage(raw);
   }
 
-  void _send(String type, String value) {
+  void _sendString(String type, String value) {
     final c = _chat;
     if (c == null) return;
     if (c.state != RTCDataChannelState.RTCDataChannelOpen) return;
     c.send(RTCDataChannelMessage(jsonEncode({'t': type, 'v': value})));
   }
 
-  void sendChat(String text) => _send('c', text);
-  void sendEmoji(String emoji) => _send('e', emoji);
+  void _sendJson(String type, Map<String, dynamic> value) {
+    final c = _chat;
+    if (c == null) return;
+    if (c.state != RTCDataChannelState.RTCDataChannelOpen) return;
+    c.send(RTCDataChannelMessage(jsonEncode({'t': type, 'v': value})));
+  }
+
+  void sendChat(String text) => _sendString('c', text);
+  void sendEmoji(String emoji) => _sendString('e', emoji);
+  void sendGame(Map<String, dynamic> payload) => _sendJson('g', payload);
 
   Future<void> handleSignal(Map<String, dynamic> payload) async {
     final pc = _pc;

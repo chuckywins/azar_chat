@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../../games/game_controller.dart';
+import '../../games/widgets/games_panel.dart';
 import '../../services/block_service.dart';
 import '../../services/friends_service.dart';
 import '../../services/gift_service.dart';
@@ -27,7 +29,9 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
   String? _giftFxGlyph;
 
   bool _showIntro = true;
+  bool _gamesOpen = false;
   Timer? _introTimer;
+  final _gc = GameController.instance;
 
   @override
   void initState() {
@@ -40,16 +44,30 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
       if (mounted) setState(() => _gifts = list);
     }).catchError((_) {});
 
+    _gc.bind(KCContext.instance.app);
+    _gc.addListener(_onGameChange);
+
     // Match-intro overlay: ~2s reveal then fade to actual call.
     _introTimer = Timer(const Duration(milliseconds: 2200), () {
       if (mounted) setState(() => _showIntro = false);
     });
   }
 
+  void _onGameChange() {
+    if (!mounted) return;
+    // Auto-pop the panel when the peer sends an invite.
+    if (_gc.status == GameStatus.inviteReceived && !_gamesOpen) {
+      setState(() => _gamesOpen = true);
+    } else {
+      setState(() {});
+    }
+  }
+
   @override
   void dispose() {
     _sec?.cancel();
     _introTimer?.cancel();
+    _gc.removeListener(_onGameChange);
     super.dispose();
   }
 
@@ -254,6 +272,12 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
             ),
           ),
 
+        // games overlay (only while open)
+        if (_gamesOpen)
+          Positioned.fill(child: KCGamesPanel(
+            onClose: () => setState(() => _gamesOpen = false),
+          )),
+
         // controls dock
         Positioned(
           left: 0, right: 0, bottom: 0,
@@ -275,6 +299,8 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
                         onTap: () => ctx.app.switchCamera()),
                       KCIconBtn(icon: _liked ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
                         active: _liked, size: 52, label: 'Beğen', onTap: _like),
+                      KCIconBtn(icon: Icons.videogame_asset_rounded, size: 52, label: 'Oyun',
+                        onTap: () => setState(() => _gamesOpen = true)),
                       KCIconBtn(icon: Icons.card_giftcard_rounded, accent: true, size: 52, label: 'Hediye',
                         onTap: () => _showGiftSheet()),
                       KCIconBtn(icon: Icons.chat_bubble_outline_rounded, size: 52, label: 'Mesaj',

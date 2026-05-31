@@ -5,6 +5,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../auth/auth_controller.dart';
 import '../config.dart';
+import '../games/game_controller.dart';
 import '../services/device_fp_service.dart';
 import '../signaling/signaling.dart';
 import '../webrtc/media.dart';
@@ -44,6 +45,11 @@ class AppController extends ChangeNotifier {
   Signaling? _signaling;
   PeerSession? _peer;
   StreamSubscription? _msgSub;
+
+  /// Wired by GameController so peer game-payloads can be routed without
+  /// AppController having to know game internals.
+  void Function(Map<String, dynamic> payload)? onGamePayload;
+  void sendGame(Map<String, dynamic> payload) => _peer?.sendGame(payload);
 
   AppPhase phase = AppPhase.idle;
   String? selfId;
@@ -222,6 +228,9 @@ class AppController extends ChangeNotifier {
         notifyListeners();
         _pruneEmojis();
       },
+      onGameMessage: (payload) {
+        onGamePayload?.call(payload);
+      },
     );
     await _peer!.init(initiator: initiator);
     chatMessages.clear();
@@ -289,7 +298,12 @@ class AppController extends ChangeNotifier {
     _peer = null;
     peerId = null;
     peerName = null;
+    peerCountry = null;
+    peerGenderInfo = null;
+    _peerUserId = null;
     remoteRenderer.srcObject = null;
+    // Any in-flight game belongs to the prior match — reset it.
+    GameController.instance.resetAll();
     if (p != null) {
       // fire-and-forget; ignore close errors
       p.dispose();
