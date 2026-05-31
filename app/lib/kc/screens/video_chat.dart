@@ -61,7 +61,7 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
         _giftFxGlyph = g.glyph;
       });
       ctx.toast('${g.name} gönderildi ${g.glyph}');
-      Future.delayed(const Duration(milliseconds: 2200), () {
+      Future.delayed(const Duration(milliseconds: 2800), () {
         if (!mounted) return;
         setState(() { _giftFxKey = null; _giftFxGlyph = null; });
       });
@@ -208,18 +208,20 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
           ),
         ),
 
-        // gift fly fx (sender side — local feedback)
+        // gift rain (sender side — local feedback)
         if (_giftFxKey != null && _giftFxGlyph != null)
-          Positioned(left: 0, right: 0, bottom: 220,
-            child: Center(child: KCGiftFly(key: _giftFxKey!, glyph: _giftFxGlyph!))),
+          Positioned.fill(
+            child: KCGiftRain(key: _giftFxKey!, glyph: _giftFxGlyph!),
+          ),
 
-        // incoming gift fx (receiver side — realtime from peer)
+        // incoming gift rain (receiver side — realtime from peer)
         if (ctx.incomingGiftBurst != null)
-          Positioned(left: 0, right: 0, bottom: 220,
-            child: Center(child: KCGiftFly(
+          Positioned.fill(
+            child: KCGiftRain(
               key: ValueKey('in-${ctx.incomingGiftBurst!.at.microsecondsSinceEpoch}'),
               glyph: ctx.incomingGiftBurst!.glyph,
-            ))),
+            ),
+          ),
 
         // controls dock
         Positioned(

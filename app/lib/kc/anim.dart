@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 /// A widget that floats up and down (translate Y + slight rotation).
@@ -172,6 +174,116 @@ class _KCGiftFlyState extends State<KCGiftFly> with SingleTickerProviderStateMix
                 child: Text(widget.glyph, style: const TextStyle(fontSize: 70)),
               ),
             ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 15-20 emoji particles raining up the full screen with randomized
+/// x position, delay, rotation, scale and speed.  Lifetime ~2.6s.
+class KCGiftRain extends StatefulWidget {
+  const KCGiftRain({super.key, required this.glyph, this.count = 18});
+  final String glyph;
+  final int count;
+
+  @override
+  State<KCGiftRain> createState() => _KCGiftRainState();
+}
+
+class _GiftParticle {
+  final double xPct;     // 0..1 — horizontal anchor (screen-width fraction)
+  final double driftPx;  // -40..40 — sideways drift over lifetime
+  final double rotation; // -0.5..0.5 rad
+  final double scale;    // 0.65..1.4
+  final double delay;    // 0..0.55 of total duration
+  final double speed;    // 0.7..1.2 — vertical speed multiplier
+  final double fontSize; // 36..72
+  _GiftParticle(this.xPct, this.driftPx, this.rotation, this.scale, this.delay, this.speed, this.fontSize);
+}
+
+class _KCGiftRainState extends State<KCGiftRain> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 2600))..forward();
+  late final List<_GiftParticle> _particles;
+
+  @override
+  void initState() {
+    super.initState();
+    final seed = DateTime.now().microsecondsSinceEpoch & 0x7fffffff;
+    final rnd = Random(seed);
+    _particles = List.generate(widget.count, (_) {
+      return _GiftParticle(
+        rnd.nextDouble(),                          // xPct 0..1
+        (rnd.nextDouble() * 80) - 40,              // driftPx -40..40
+        (rnd.nextDouble() * 1.0) - 0.5,            // rotation -0.5..0.5
+        0.65 + rnd.nextDouble() * 0.75,            // scale 0.65..1.4
+        rnd.nextDouble() * 0.55,                   // delay 0..0.55
+        0.7 + rnd.nextDouble() * 0.5,              // speed 0.7..1.2
+        36 + rnd.nextDouble() * 36,                // fontSize 36..72
+      );
+    });
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final w = c.maxWidth;
+          final h = c.maxHeight > 0 ? c.maxHeight : MediaQuery.of(context).size.height;
+          return AnimatedBuilder(
+            animation: _ctrl,
+            builder: (_, _) {
+              return Stack(
+                children: _particles.map((p) {
+                  final globalT = _ctrl.value;
+                  final localT = ((globalT - p.delay) * p.speed).clamp(0.0, 1.0);
+                  if (localT <= 0) return const SizedBox.shrink();
+
+                  // Travel from bottom to ~80% above current viewport.
+                  final eased = Curves.easeOutCubic.transform(localT);
+                  final startY = h - 40;
+                  final endY = -h * 0.1;
+                  final y = startY - (startY - endY) * eased;
+
+                  // Sideways drift: oscillate slightly.
+                  final drift = p.driftPx * sin(localT * pi);
+                  final x = p.xPct * w + drift - (p.fontSize / 2);
+
+                  // Fade: fade-in early, full mid, fade-out late.
+                  double opacity;
+                  if (localT < 0.15) {
+                    opacity = localT / 0.15;
+                  } else if (localT > 0.75) {
+                    opacity = (1 - (localT - 0.75) / 0.25).clamp(0.0, 1.0);
+                  } else {
+                    opacity = 1.0;
+                  }
+
+                  // Scale: pop in, slight drift.
+                  final scale = p.scale * (0.6 + 0.4 * Curves.easeOutBack.transform((localT * 2).clamp(0.0, 1.0)));
+
+                  return Positioned(
+                    left: x, top: y,
+                    child: Opacity(
+                      opacity: opacity,
+                      child: Transform.rotate(
+                        angle: p.rotation * (1 - eased * 0.5),
+                        child: Transform.scale(
+                          scale: scale,
+                          child: Text(widget.glyph, style: TextStyle(fontSize: p.fontSize)),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
           );
         },
       ),

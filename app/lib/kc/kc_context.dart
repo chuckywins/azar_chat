@@ -181,7 +181,7 @@ class KCContext extends ChangeNotifier {
       toast('Sana ${g.glyph} hediye geldi!');
       notifyListeners();
       _giftBurstTimer?.cancel();
-      _giftBurstTimer = Timer(const Duration(milliseconds: 2200), () {
+      _giftBurstTimer = Timer(const Duration(milliseconds: 2800), () {
         incomingGiftBurst = null;
         notifyListeners();
       });
