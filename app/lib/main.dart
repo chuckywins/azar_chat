@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import 'auth/auth_controller.dart';
 import 'auth/login_screen.dart';
@@ -61,55 +62,64 @@ class _RootState extends State<_Root> {
 
   @override
   Widget build(BuildContext context) {
-    // Gate 1 — Supabase configured at all?
-    if (!AppConfig.hasSupabase) {
-      return _ConfigMissingScreen();
-    }
-
-    // Gate 2 — auth.  Show login until anonymous OR authenticated.
+    if (!AppConfig.hasSupabase) return const _ConfigMissingScreen();
     if (_auth.mode == AuthMode.signedOut || _auth.mode == AuthMode.uninitialized) {
       return LoginScreen(controller: _auth);
     }
 
-    // Gate 3 — normal app flow
     final c = widget.app;
-    switch (c.phase) {
-      case AppPhase.idle:
-        return LandingScreen(controller: c, onStart: c.start);
-      case AppPhase.connecting:
-      case AppPhase.searching:
-        return MatchingScreen(controller: c, onCancel: c.leave);
-      case AppPhase.inCall:
-        return InCallScreen(controller: c, onLeave: c.leave);
-      case AppPhase.ended:
-        return _EndedScreen(controller: c);
-      case AppPhase.error:
-        return _ErrorScreen(controller: c);
-    }
+    final screen = switch (c.phase) {
+      AppPhase.idle        => LandingScreen(controller: c, onStart: c.start),
+      AppPhase.connecting ||
+      AppPhase.searching   => MatchingScreen(controller: c, onCancel: c.leave),
+      AppPhase.inCall      => InCallScreen(controller: c, onLeave: c.leave),
+      AppPhase.ended       => _EndedScreen(controller: c),
+      AppPhase.error       => _ErrorScreen(controller: c),
+    };
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 320),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+      child: KeyedSubtree(key: ValueKey(c.phase), child: screen),
+    );
   }
 }
 
 class _ConfigMissingScreen extends StatelessWidget {
+  const _ConfigMissingScreen();
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(width: 12, height: 12, color: AzarPalette.warning),
-              const SizedBox(height: 16),
-              Text('Yapılandırma eksik', style: Theme.of(context).textTheme.headlineLarge),
-              const SizedBox(height: 8),
-              Text(
-                'SUPABASE_URL ve SUPABASE_ANON_KEY ortam değişkenleri build sırasında verilmemiş. '
-                'Netlify env vars veya --dart-define ile sağlanmalı.',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim),
-              ),
-            ],
+      body: AzarBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 56, height: 56,
+                  decoration: BoxDecoration(
+                    color: AzarPalette.warning.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.warning_amber_rounded, color: AzarPalette.warning, size: 28),
+                ),
+                const SizedBox(height: 24),
+                Text('Yapılandırma eksik', style: Theme.of(context).textTheme.headlineLarge),
+                const SizedBox(height: 8),
+                Text(
+                  'SUPABASE_URL ve SUPABASE_ANON_KEY ortam değişkenleri build sırasında verilmemiş. '
+                  'Netlify env vars veya --dart-define ile sağlanmalı.',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -124,48 +134,47 @@ class _EndedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Karşı taraf çıktı.', style: Theme.of(context).textTheme.headlineLarge),
-              const SizedBox(height: 8),
-              Text('Sıradaki kişiyi aramak ister misin?',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim)),
-              const Spacer(),
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: controller.leave,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 18),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(border: Border.all(color: AzarPalette.line)),
-                        child: Text('Çık', style: Theme.of(context).textTheme.labelLarge),
-                      ),
-                    ),
+      body: AzarBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Spacer(),
+                Container(
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(
+                    color: AzarPalette.surfaceHigh,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: AzarPalette.line),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: GestureDetector(
-                      onTap: controller.next,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 18),
-                        alignment: Alignment.center,
-                        decoration: const BoxDecoration(color: AzarPalette.accent),
-                        child: Text('SIRADAKİ',
-                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                color: AzarPalette.bg, letterSpacing: 1.5)),
-                      ),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.waving_hand_rounded, color: AzarPalette.textDim, size: 28),
+                ).animate().fadeIn(duration: 400.ms).scale(begin: const Offset(0.8, 0.8)),
+                const SizedBox(height: 20),
+                Text('Karşı taraf çıktı.', style: Theme.of(context).textTheme.headlineLarge)
+                    .animate().fadeIn(duration: 400.ms, delay: 100.ms).slideY(begin: 0.1),
+                const SizedBox(height: 8),
+                Text(
+                  'Sıradaki kişiyi aramak ister misin?',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim),
+                ).animate().fadeIn(duration: 400.ms, delay: 200.ms),
+                const Spacer(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GhostButton(label: 'ÇIK', icon: Icons.logout_rounded, onTap: controller.leave),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: GradientButton(label: 'SIRADAKİ', icon: Icons.bolt_rounded, onTap: controller.next),
+                    ),
+                  ],
+                ).animate().fadeIn(duration: 400.ms, delay: 300.ms).slideY(begin: 0.2),
+              ],
+            ),
           ),
         ),
       ),
@@ -180,31 +189,34 @@ class _ErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(width: 12, height: 12, color: AzarPalette.danger),
-              const SizedBox(height: 16),
-              Text('Bir şeyler ters gitti', style: Theme.of(context).textTheme.headlineLarge),
-              const SizedBox(height: 8),
-              Text(controller.errorMessage ?? 'Bilinmeyen hata',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim)),
-              const Spacer(),
-              GestureDetector(
-                onTap: controller.leave,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 18),
+      body: AzarBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Spacer(),
+                Container(
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(
+                    color: AzarPalette.danger.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
                   alignment: Alignment.center,
-                  decoration: const BoxDecoration(color: AzarPalette.accent),
-                  child: Text('GERİ',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: AzarPalette.bg, letterSpacing: 1.5)),
+                  child: const Icon(Icons.error_outline_rounded, color: AzarPalette.danger, size: 30),
+                ).animate().fadeIn(duration: 400.ms).shake(hz: 3, duration: 400.ms),
+                const SizedBox(height: 20),
+                Text('Bir şeyler ters gitti', style: Theme.of(context).textTheme.headlineLarge),
+                const SizedBox(height: 8),
+                Text(
+                  controller.errorMessage ?? 'Bilinmeyen hata',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim),
                 ),
-              ),
-            ],
+                const Spacer(),
+                GradientButton(label: 'GERİ DÖN', icon: Icons.arrow_back_rounded, onTap: controller.leave),
+              ],
+            ),
           ),
         ),
       ),

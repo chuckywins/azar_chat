@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../auth/auth_controller.dart';
@@ -8,100 +9,131 @@ import '../theme.dart';
 
 class InCallScreen extends StatelessWidget {
   const InCallScreen({super.key, required this.controller, required this.onLeave});
-
   final AppController controller;
   final VoidCallback onLeave;
 
   @override
   Widget build(BuildContext context) {
+    final topPad = MediaQuery.of(context).padding.top;
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // remote — full bleed
-          Positioned.fill(
-            child: Container(
-              color: AzarPalette.surface,
-              child: RTCVideoView(
-                controller.remoteRenderer,
-                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+          // Remote full bleed
+          Container(
+            color: AzarPalette.bg,
+            child: RTCVideoView(
+              controller.remoteRenderer,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            ),
+          ),
+
+          // Top gradient overlay for header readability
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: topPad + 100,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      AzarPalette.bg.withValues(alpha: 0.7),
+                      AzarPalette.bg.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
 
-          // local preview — bottom right card
+          // Bottom gradient overlay
           Positioned(
-            right: 16,
-            top: MediaQuery.of(context).padding.top + 16,
-            child: _LocalPreview(controller: controller),
-          ),
-
-          // peer name strip + report button
-          Positioned(
-            left: 16,
-            top: MediaQuery.of(context).padding.top + 16,
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(color: AzarPalette.bg.withValues(alpha: 0.7), border: Border.all(color: AzarPalette.line)),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(width: 8, height: 8, decoration: const BoxDecoration(color: AzarPalette.accent, shape: BoxShape.circle)),
-                      const SizedBox(width: 8),
-                      Text(controller.peerName ?? 'Yabancı', style: Theme.of(context).textTheme.labelLarge),
+            bottom: 0, left: 0, right: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      AzarPalette.bg.withValues(alpha: 0.85),
+                      AzarPalette.bg.withValues(alpha: 0.0),
                     ],
                   ),
                 ),
+              ),
+            ),
+          ),
+
+          // Top-left peer chip + report button
+          Positioned(
+            top: topPad + 14, left: 16,
+            child: Row(
+              children: [
+                _peerChip(context, controller.peerName ?? 'Yabancı')
+                    .animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
                 const SizedBox(width: 8),
-                GestureDetector(
+                _glassIconBtn(
+                  icon: Icons.flag_outlined,
+                  color: AzarPalette.danger,
                   onTap: () => _showReportSheet(context, controller),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: AzarPalette.bg.withValues(alpha: 0.7), border: Border.all(color: AzarPalette.line)),
-                    child: const Icon(Icons.flag_outlined, size: 16, color: AzarPalette.danger),
-                  ),
-                ),
+                ).animate().fadeIn(duration: 400.ms, delay: 100.ms),
               ],
             ),
           ),
 
-          // control bar
-          Align(
-            alignment: Alignment.bottomCenter,
+          // Top-right local PIP
+          Positioned(
+            top: topPad + 14, right: 16,
+            child: _LocalPreview(controller: controller)
+                .animate().fadeIn(duration: 400.ms).slideX(begin: 0.1),
+          ),
+
+          // Bottom control bar
+          Positioned(
+            left: 0, right: 0, bottom: 0,
             child: SafeArea(
+              top: false,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _CtrlButton(
-                      icon: controller.micOn ? Icons.mic : Icons.mic_off,
-                      active: controller.micOn,
-                      onTap: controller.toggleMic,
-                    ),
-                    const SizedBox(width: 12),
-                    _CtrlButton(
-                      icon: controller.camOn ? Icons.videocam : Icons.videocam_off,
-                      active: controller.camOn,
-                      onTap: controller.toggleCam,
-                    ),
-                    const SizedBox(width: 12),
-                    _CtrlButton(
-                      icon: Icons.cameraswitch,
-                      active: true,
-                      onTap: controller.switchCamera,
-                    ),
-                    const SizedBox(width: 12),
-                    _PrimaryBtn(label: 'SIRADAKİ', icon: Icons.skip_next, onTap: controller.next),
-                    const SizedBox(width: 12),
-                    _CtrlButton(
-                      icon: Icons.call_end,
-                      active: false,
-                      danger: true,
-                      onTap: onLeave,
-                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _ctrlBtn(
+                          icon: controller.micOn ? Icons.mic_rounded : Icons.mic_off_rounded,
+                          on: controller.micOn,
+                          onTap: controller.toggleMic,
+                        ),
+                        const SizedBox(width: 10),
+                        _ctrlBtn(
+                          icon: controller.camOn ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+                          on: controller.camOn,
+                          onTap: controller.toggleCam,
+                        ),
+                        const SizedBox(width: 10),
+                        _ctrlBtn(
+                          icon: Icons.cameraswitch_rounded,
+                          on: true,
+                          onTap: controller.switchCamera,
+                        ),
+                        const SizedBox(width: 10),
+                        _ctrlBtn(
+                          icon: Icons.call_end_rounded,
+                          on: true,
+                          danger: true,
+                          onTap: onLeave,
+                        ),
+                      ],
+                    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.2),
+                    const SizedBox(height: 14),
+                    _SwipeNextButton(onTap: controller.next)
+                        .animate().fadeIn(duration: 400.ms, delay: 80.ms).slideY(begin: 0.2),
                   ],
                 ),
               ),
@@ -111,27 +143,167 @@ class InCallScreen extends StatelessWidget {
       ),
     );
   }
+
+  Widget _peerChip(BuildContext context, String name) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AzarPalette.surface.withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AzarPalette.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8, height: 8,
+            decoration: BoxDecoration(
+              gradient: AzarPalette.brandGradient,
+              shape: BoxShape.circle,
+              boxShadow: [BoxShadow(color: AzarPalette.primary.withValues(alpha: 0.5), blurRadius: 6)],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            name,
+            style: const TextStyle(color: AzarPalette.text, fontSize: 13.5, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _glassIconBtn({required IconData icon, required Color color, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36, height: 36,
+        decoration: BoxDecoration(
+          color: AzarPalette.surface.withValues(alpha: 0.75),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, color: color, size: 16),
+      ),
+    );
+  }
+
+  Widget _ctrlBtn({
+    required IconData icon,
+    required bool on,
+    required VoidCallback onTap,
+    bool danger = false,
+  }) {
+    final Color bg = danger
+        ? AzarPalette.danger
+        : (on ? AzarPalette.surfaceHigh : AzarPalette.surface);
+    final Color iconColor = danger
+        ? Colors.white
+        : (on ? AzarPalette.text : AzarPalette.textDim);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 56, height: 56,
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: danger ? Colors.transparent : AzarPalette.line,
+            width: 1,
+          ),
+          boxShadow: danger
+              ? [BoxShadow(color: AzarPalette.danger.withValues(alpha: 0.4), blurRadius: 18, spreadRadius: -2)]
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, color: iconColor, size: 22),
+      ),
+    );
+  }
 }
+
+class _LocalPreview extends StatelessWidget {
+  const _LocalPreview({required this.controller});
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size.shortestSide;
+    final w = (size * 0.28).clamp(110.0, 180.0);
+    final h = w * 4 / 3;
+    return Container(
+      width: w, height: h,
+      decoration: BoxDecoration(
+        color: AzarPalette.bg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AzarPalette.line.withValues(alpha: 0.8), width: 1),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 14, offset: const Offset(0, 6)),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: RTCVideoView(
+        controller.localRenderer,
+        mirror: true,
+        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+      ),
+    );
+  }
+}
+
+/// Wide gradient pill — primary "next" CTA.
+class _SwipeNextButton extends StatelessWidget {
+  const _SwipeNextButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: GradientButton(
+        label: 'SIRADAKİ',
+        icon: Icons.skip_next_rounded,
+        height: 56,
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// Report bottom sheet
+// ============================================================================
 
 Future<void> _showReportSheet(BuildContext context, AppController controller) async {
   final peerSocketId = controller.peerId;
   if (peerSocketId == null) return;
-
   await showModalBottomSheet<void>(
     context: context,
-    backgroundColor: AzarPalette.surface,
+    backgroundColor: Colors.transparent,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
     builder: (sheetCtx) => _ReportSheet(
       peerSocketId: peerSocketId,
       onSubmitted: () {
         Navigator.of(sheetCtx).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             backgroundColor: AzarPalette.surfaceUp,
-            content: Text('Raporun alındı. Sıradakine geçiyoruz.',
-                style: TextStyle(color: AzarPalette.text)),
-            duration: Duration(seconds: 2),
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: AzarPalette.success, size: 18),
+                SizedBox(width: 10),
+                Expanded(child: Text('Raporun alındı. Sıradakine geçiyoruz.',
+                    style: TextStyle(color: AzarPalette.text))),
+              ],
+            ),
+            duration: const Duration(seconds: 2),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: AzarPalette.line),
+            ),
           ),
         );
         controller.next();
@@ -156,18 +328,15 @@ class _ReportSheetState extends State<_ReportSheet> {
   final _note = TextEditingController();
 
   static const _reasons = [
-    ('nsfw',       'NSFW içerik'),
-    ('harassment', 'Taciz / hakaret'),
-    ('spam',       'Spam / reklam'),
-    ('minor',      'Küçük yaş'),
-    ('other',      'Diğer'),
+    ('nsfw',       'NSFW içerik', Icons.no_adult_content),
+    ('harassment', 'Taciz / hakaret', Icons.report_problem_outlined),
+    ('spam',       'Spam / reklam', Icons.block_rounded),
+    ('minor',      'Küçük yaş', Icons.child_care_outlined),
+    ('other',      'Diğer', Icons.more_horiz),
   ];
 
   @override
-  void dispose() {
-    _note.dispose();
-    super.dispose();
-  }
+  void dispose() { _note.dispose(); super.dispose(); }
 
   Future<void> _submit() async {
     if (_reason == null) {
@@ -189,183 +358,154 @@ class _ReportSheetState extends State<_ReportSheet> {
       );
       widget.onSubmitted();
     } catch (e) {
-      setState(() {
-        _busy = false;
-        _error = e.toString().replaceFirst('Exception: ', '');
-      });
+      setState(() { _busy = false; _error = e.toString().replaceFirst('Exception: ', ''); });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final inset = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
-      padding: EdgeInsets.only(bottom: bottomInset),
+      padding: EdgeInsets.only(bottom: inset),
       child: Container(
         decoration: const BoxDecoration(
-          color: AzarPalette.surface,
+          gradient: AzarPalette.surfaceGradient,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           border: Border(top: BorderSide(color: AzarPalette.line)),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: AzarPalette.line,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             Row(
               children: [
-                Container(width: 10, height: 10, color: AzarPalette.danger),
-                const SizedBox(width: 10),
-                Text('Kullanıcıyı raporla',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(letterSpacing: 1.2)),
-                const Spacer(),
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: AzarPalette.danger.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.flag_rounded, color: AzarPalette.danger, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text('Kullanıcıyı raporla',
+                      style: Theme.of(context).textTheme.titleLarge),
+                ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: AzarPalette.textDim, size: 20),
+                  icon: const Icon(Icons.close_rounded, color: AzarPalette.textDim, size: 20),
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text('Sebep', style: Theme.of(context).textTheme.bodySmall?.copyWith(letterSpacing: 1.2)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            const SizedBox(height: 14),
+            Column(
               children: _reasons.map((r) {
                 final selected = _reason == r.$1;
-                return GestureDetector(
-                  onTap: () => setState(() => _reason = r.$1),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: selected ? AzarPalette.danger : AzarPalette.surfaceUp,
-                      border: Border.all(color: selected ? AzarPalette.danger : AzarPalette.line),
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _reason = r.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: selected ? AzarPalette.danger.withValues(alpha: 0.15) : AzarPalette.surfaceHigh,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: selected ? AzarPalette.danger : AzarPalette.line,
+                          width: selected ? 1.4 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(r.$3, color: selected ? AzarPalette.danger : AzarPalette.textDim, size: 18),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(r.$2,
+                                style: TextStyle(
+                                  color: selected ? AzarPalette.text : AzarPalette.textDim,
+                                  fontSize: 14.5,
+                                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                                )),
+                          ),
+                          if (selected)
+                            const Icon(Icons.check_circle_rounded, color: AzarPalette.danger, size: 18),
+                        ],
+                      ),
                     ),
-                    child: Text(r.$2,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: selected ? AzarPalette.text : AzarPalette.textDim,
-                            )),
                   ),
                 );
               }).toList(),
             ),
-            const SizedBox(height: 20),
-            Text('Not (opsiyonel)', style: Theme.of(context).textTheme.bodySmall?.copyWith(letterSpacing: 1.2)),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             TextField(
               controller: _note,
               maxLength: 200,
               maxLines: 2,
-              style: Theme.of(context).textTheme.bodyLarge,
-              cursorColor: AzarPalette.accent,
-              decoration: const InputDecoration(
-                hintText: 'Kısaca anlat (zorunlu değil)',
-                isDense: true,
+              style: const TextStyle(color: AzarPalette.text, fontSize: 14),
+              cursorColor: AzarPalette.primary,
+              decoration: InputDecoration(
+                hintText: 'Not (opsiyonel)',
+                hintStyle: const TextStyle(color: AzarPalette.textFaint),
                 counterText: '',
-                border: UnderlineInputBorder(borderSide: BorderSide(color: AzarPalette.line)),
-                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AzarPalette.line)),
-                focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AzarPalette.accent, width: 2)),
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(border: Border.all(color: AzarPalette.danger)),
-                child: Text(_error!,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AzarPalette.danger)),
-              ),
-            ],
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: GestureDetector(
-                onTap: _busy ? null : _submit,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: _busy ? AzarPalette.surfaceUp : AzarPalette.danger),
-                  child: Text(_busy ? 'GÖNDERİLİYOR...' : 'RAPORU GÖNDER',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: _busy ? AzarPalette.textDim : AzarPalette.text,
-                            letterSpacing: 1.5,
-                          )),
+                filled: true,
+                fillColor: AzarPalette.surfaceHigh,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AzarPalette.line),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AzarPalette.line),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AzarPalette.primary, width: 1.5),
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LocalPreview extends StatelessWidget {
-  const _LocalPreview({required this.controller});
-  final AppController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size.shortestSide;
-    final w = (size * 0.28).clamp(120.0, 200.0);
-    final h = w * 4 / 3;
-    return Container(
-      width: w,
-      height: h,
-      decoration: BoxDecoration(
-        color: AzarPalette.bg,
-        border: Border.all(color: AzarPalette.line),
-      ),
-      child: RTCVideoView(
-        controller.localRenderer,
-        mirror: true,
-        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-      ),
-    );
-  }
-}
-
-class _CtrlButton extends StatelessWidget {
-  const _CtrlButton({required this.icon, required this.active, required this.onTap, this.danger = false});
-  final IconData icon;
-  final bool active;
-  final bool danger;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final fill = danger ? AzarPalette.danger : (active ? AzarPalette.surfaceUp : AzarPalette.surface);
-    final fg = danger ? AzarPalette.text : (active ? AzarPalette.text : AzarPalette.textDim);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 52, height: 52,
-        decoration: BoxDecoration(color: fill, border: Border.all(color: danger ? AzarPalette.danger : AzarPalette.line)),
-        child: Icon(icon, color: fg, size: 22),
-      ),
-    );
-  }
-}
-
-class _PrimaryBtn extends StatelessWidget {
-  const _PrimaryBtn({required this.label, required this.icon, required this.onTap});
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        decoration: const BoxDecoration(color: AzarPalette.accent),
-        child: Row(
-          children: [
-            Icon(icon, color: AzarPalette.bg, size: 20),
-            const SizedBox(width: 8),
-            Text(label, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: AzarPalette.bg, letterSpacing: 1.5)),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AzarPalette.danger.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AzarPalette.danger.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: AzarPalette.danger, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_error!, style: const TextStyle(color: AzarPalette.text, fontSize: 13))),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            GradientButton(
+              label: 'RAPORU GÖNDER',
+              icon: Icons.send_rounded,
+              busy: _busy,
+              gradient: const LinearGradient(
+                colors: [AzarPalette.danger, Color(0xFFFF7A8A)],
+              ),
+              onTap: _submit,
+            ),
           ],
         ),
       ),

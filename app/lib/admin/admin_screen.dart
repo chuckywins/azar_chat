@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../auth/auth_controller.dart';
 import '../theme.dart';
@@ -6,7 +7,6 @@ import 'admin_repo.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
-
   @override
   State<AdminScreen> createState() => _AdminScreenState();
 }
@@ -15,31 +15,41 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   late final TabController _tabs = TabController(length: 4, vsync: this);
 
   @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
+  void dispose() { _tabs.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     final auth = AuthController.instance;
     if (!auth.isAdmin && !auth.isModerator) {
       return Scaffold(
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(width: 12, height: 12, color: AzarPalette.danger),
-                const SizedBox(height: 16),
-                Text('Yetkin yok', style: Theme.of(context).textTheme.headlineLarge),
-                const SizedBox(height: 8),
-                Text('Bu sayfa sadece admin/moderator role\'lü kullanıcılar içindir.',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim)),
-                const SizedBox(height: 16),
-                _BackBtn(),
-              ],
+        body: AzarBackground(
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 56, height: 56,
+                    decoration: BoxDecoration(
+                      color: AzarPalette.danger.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.lock_outline_rounded, color: AzarPalette.danger, size: 28),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Yetkin yok', style: Theme.of(context).textTheme.headlineLarge),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Bu sayfa sadece moderator/admin role\'lü kullanıcılar içindir.',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim),
+                  ),
+                  const SizedBox(height: 24),
+                  GhostButton(label: 'GERİ DÖN', icon: Icons.arrow_back_rounded, onTap: () => Navigator.of(context).maybePop()),
+                ],
+              ),
             ),
           ),
         ),
@@ -47,39 +57,54 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
 
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            _Header(),
-            Container(
-              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AzarPalette.line))),
-              child: TabBar(
-                controller: _tabs,
-                indicatorColor: AzarPalette.accent,
-                indicatorWeight: 2,
-                labelColor: AzarPalette.text,
-                unselectedLabelColor: AzarPalette.textDim,
-                labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(letterSpacing: 1.2),
-                tabs: const [
-                  Tab(text: 'PANO'),
-                  Tab(text: 'RAPORLAR'),
-                  Tab(text: 'KULLANICILAR'),
-                  Tab(text: 'YASAKLAR'),
-                ],
+      body: AzarBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              _Header(),
+              const SizedBox(height: 4),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                decoration: BoxDecoration(
+                  color: AzarPalette.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AzarPalette.line),
+                ),
+                child: TabBar(
+                  controller: _tabs,
+                  isScrollable: false,
+                  dividerColor: Colors.transparent,
+                  indicator: BoxDecoration(
+                    gradient: AzarPalette.brandGradient,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicatorPadding: const EdgeInsets.all(3),
+                  labelColor: Colors.white,
+                  unselectedLabelColor: AzarPalette.textDim,
+                  labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.8),
+                  tabs: const [
+                    Tab(text: 'PANO'),
+                    Tab(text: 'RAPORLAR'),
+                    Tab(text: 'KULLANICILAR'),
+                    Tab(text: 'YASAKLAR'),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabs,
-                children: const [
-                  _DashboardTab(),
-                  _ReportsTab(),
-                  _UsersTab(),
-                  _BansTab(),
-                ],
+              const SizedBox(height: 8),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabs,
+                  children: const [
+                    _DashboardTab(),
+                    _ReportsTab(),
+                    _UsersTab(),
+                    _BansTab(),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -90,48 +115,46 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
       child: Row(
         children: [
-          Container(width: 12, height: 12, color: AzarPalette.accent),
+          GestureDetector(
+            onTap: () => Navigator.of(context).maybePop(),
+            child: Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: AzarPalette.surfaceHigh,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AzarPalette.line),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.arrow_back_rounded, color: AzarPalette.text, size: 18),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 28, height: 28,
+            decoration: BoxDecoration(
+              gradient: AzarPalette.brandGradient,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.shield_outlined, color: Colors.white, size: 16),
+          ),
           const SizedBox(width: 10),
-          Text('kerochat / admin', style: Theme.of(context).textTheme.labelLarge),
-          const Spacer(),
-          _BackBtn(),
+          Text('Admin Panel', style: Theme.of(context).textTheme.titleLarge?.copyWith(letterSpacing: -0.3)),
         ],
       ),
     );
   }
 }
 
-class _BackBtn extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.of(context).maybePop(),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(border: Border.all(color: AzarPalette.line)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.arrow_back, size: 16, color: AzarPalette.text),
-            const SizedBox(width: 6),
-            Text('Geri', style: Theme.of(context).textTheme.labelLarge),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ============================================================================
-// Dashboard tab
+// Dashboard
 // ============================================================================
 
 class _DashboardTab extends StatefulWidget {
   const _DashboardTab();
-
   @override
   State<_DashboardTab> createState() => _DashboardTabState();
 }
@@ -142,6 +165,7 @@ class _DashboardTabState extends State<_DashboardTab> {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
+      color: AzarPalette.primary,
       onRefresh: () async {
         setState(() => _future = AdminRepo.instance.counters());
         await _future;
@@ -152,39 +176,60 @@ class _DashboardTabState extends State<_DashboardTab> {
           FutureBuilder<Map<String, int>>(
             future: _future,
             builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const _Loading();
-              }
+              if (snap.connectionState == ConnectionState.waiting) return const _Loading();
               if (snap.hasError) return _ErrorBox(message: '${snap.error}');
               final c = snap.data ?? {};
-              return GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 3,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.6,
+              return Column(
                 children: [
-                  _Stat(label: 'Toplam Kullanıcı', value: '${c['users'] ?? 0}'),
-                  _Stat(label: 'Bekleyen Rapor', value: '${c['pending_reports'] ?? 0}', accent: (c['pending_reports'] ?? 0) > 0),
-                  _Stat(label: 'Aktif Yasak', value: '${c['active_bans'] ?? 0}'),
+                  _StatCard(
+                    icon: Icons.people_alt_rounded,
+                    color: AzarPalette.secondary,
+                    label: 'Toplam Kullanıcı',
+                    value: '${c['users'] ?? 0}',
+                  ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.1),
+                  const SizedBox(height: 12),
+                  _StatCard(
+                    icon: Icons.flag_rounded,
+                    color: AzarPalette.primary,
+                    label: 'Bekleyen Rapor',
+                    value: '${c['pending_reports'] ?? 0}',
+                    accent: (c['pending_reports'] ?? 0) > 0,
+                  ).animate().fadeIn(duration: 350.ms, delay: 80.ms).slideY(begin: 0.1),
+                  const SizedBox(height: 12),
+                  _StatCard(
+                    icon: Icons.gavel_rounded,
+                    color: AzarPalette.danger,
+                    label: 'Aktif Yasak',
+                    value: '${c['active_bans'] ?? 0}',
+                  ).animate().fadeIn(duration: 350.ms, delay: 160.ms).slideY(begin: 0.1),
                 ],
               );
             },
           ),
-          const SizedBox(height: 32),
-          Text('Hızlı işlemler', style: Theme.of(context).textTheme.bodySmall?.copyWith(letterSpacing: 1.2)),
+          const SizedBox(height: 28),
+          Text('HIZLI İŞLEMLER',
+              style: const TextStyle(color: AzarPalette.textFaint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
           const SizedBox(height: 8),
-          Text('Üst sekmelerden raporları, kullanıcıları ve yasakları yönetebilirsin.',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim)),
+          Text(
+            'Üst sekmelerden raporları, kullanıcıları ve yasakları yönet.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         ],
       ),
     );
   }
 }
 
-class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.value, this.accent = false});
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.value,
+    this.accent = false,
+  });
+  final IconData icon;
+  final Color color;
   final String label;
   final String value;
   final bool accent;
@@ -192,21 +237,38 @@ class _Stat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AzarPalette.surface,
-        border: Border.all(color: accent ? AzarPalette.accent : AzarPalette.line),
+        gradient: AzarPalette.surfaceGradient,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent ? color : AzarPalette.line, width: accent ? 1.4 : 1),
+        boxShadow: accent
+            ? [BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 24, spreadRadius: -4)]
+            : null,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Row(
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-          Text(value,
-              style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                    fontSize: 36,
-                    color: accent ? AzarPalette.accent : AzarPalette.text,
-                  )),
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: const TextStyle(color: AzarPalette.textDim, fontSize: 12.5, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(value, style: const TextStyle(color: AzarPalette.text, fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -214,12 +276,11 @@ class _Stat extends StatelessWidget {
 }
 
 // ============================================================================
-// Reports tab
+// Reports
 // ============================================================================
 
 class _ReportsTab extends StatefulWidget {
   const _ReportsTab();
-
   @override
   State<_ReportsTab> createState() => _ReportsTabState();
 }
@@ -236,6 +297,7 @@ class _ReportsTabState extends State<_ReportsTab> {
   Widget build(BuildContext context) {
     final me = AuthController.instance.userId ?? '';
     return RefreshIndicator(
+      color: AzarPalette.primary,
       onRefresh: _refresh,
       child: FutureBuilder<List<Map<String, dynamic>>>(
         future: _future,
@@ -243,15 +305,9 @@ class _ReportsTabState extends State<_ReportsTab> {
           if (snap.connectionState == ConnectionState.waiting) return const _Loading();
           if (snap.hasError) return _ErrorBox(message: '${snap.error}');
           final reports = snap.data ?? const [];
-          if (reports.isEmpty) {
-            return ListView(children: [
-              const SizedBox(height: 80),
-              Center(child: Text('Bekleyen rapor yok.',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim))),
-            ]);
-          }
+          if (reports.isEmpty) return _Empty(icon: Icons.flag_outlined, text: 'Bekleyen rapor yok');
           return ListView.separated(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             itemBuilder: (_, i) => _ReportTile(
               report: reports[i],
               onDismiss: () async {
@@ -262,8 +318,8 @@ class _ReportsTabState extends State<_ReportsTab> {
                 await AdminRepo.instance.actionReport(reports[i]['id'] as String, me);
                 await _refresh();
               },
-            ),
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            ).animate().fadeIn(duration: 300.ms, delay: (i * 40).ms).slideY(begin: 0.05),
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemCount: reports.length,
           );
         },
@@ -286,35 +342,51 @@ class _ReportTile extends StatelessWidget {
     final createdAt = DateTime.tryParse((report['created_at'] as String?) ?? '');
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AzarPalette.surface, border: Border.all(color: AzarPalette.line)),
+      decoration: BoxDecoration(
+        gradient: AzarPalette.surfaceGradient,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AzarPalette.line),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               _ReasonChip(reason: reason),
-              const SizedBox(width: 8),
-              Text(_short(reportedId),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace')),
-              const Spacer(),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _short(reportedId),
+                  style: const TextStyle(color: AzarPalette.textDim, fontSize: 12, fontFamily: 'monospace'),
+                ),
+              ),
               if (createdAt != null)
-                Text(_relative(createdAt),
-                    style: Theme.of(context).textTheme.bodySmall),
+                Text(_relative(createdAt), style: const TextStyle(color: AzarPalette.textFaint, fontSize: 11.5)),
             ],
           ),
           if (note != null && note.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(note, style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AzarPalette.surfaceHigh,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(note, style: const TextStyle(color: AzarPalette.text, fontSize: 13.5, height: 1.4)),
+            ),
           ],
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(
-                child: _MiniBtn(label: 'Reddet', onTap: onDismiss),
-              ),
+              Expanded(child: GhostButton(label: 'Reddet', onTap: onDismiss, height: 42)),
               const SizedBox(width: 8),
               Expanded(
-                child: _MiniBtn(label: 'Aksiyon', danger: true, onTap: onAction),
+                child: GradientButton(
+                  label: 'Aksiyon',
+                  onTap: onAction,
+                  height: 42,
+                  gradient: const LinearGradient(colors: [AzarPalette.danger, Color(0xFFFF7A8A)]),
+                ),
               ),
             ],
           ),
@@ -327,13 +399,7 @@ class _ReportTile extends StatelessWidget {
 class _ReasonChip extends StatelessWidget {
   const _ReasonChip({required this.reason});
   final String reason;
-  static const _labels = {
-    'nsfw': 'NSFW',
-    'harassment': 'TACİZ',
-    'spam': 'SPAM',
-    'minor': 'KÜÇÜK',
-    'other': 'DİĞER',
-  };
+  static const _labels = {'nsfw':'NSFW','harassment':'TACİZ','spam':'SPAM','minor':'KÜÇÜK','other':'DİĞER'};
   static const _colors = {
     'nsfw': AzarPalette.danger,
     'harassment': AzarPalette.danger,
@@ -341,26 +407,28 @@ class _ReasonChip extends StatelessWidget {
     'minor': AzarPalette.danger,
     'other': AzarPalette.textDim,
   };
-
   @override
   Widget build(BuildContext context) {
-    final color = _colors[reason] ?? AzarPalette.textDim;
+    final c = _colors[reason] ?? AzarPalette.textDim;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(border: Border.all(color: color)),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: c.withValues(alpha: 0.5)),
+      ),
       child: Text(_labels[reason] ?? reason.toUpperCase(),
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color, letterSpacing: 1.0)),
+          style: TextStyle(color: c, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
     );
   }
 }
 
 // ============================================================================
-// Users tab
+// Users
 // ============================================================================
 
 class _UsersTab extends StatefulWidget {
   const _UsersTab();
-
   @override
   State<_UsersTab> createState() => _UsersTabState();
 }
@@ -375,34 +443,44 @@ class _UsersTabState extends State<_UsersTab> {
   }
 
   @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
+  void dispose() { _search.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
           child: TextField(
             controller: _search,
             onSubmitted: (_) => _refresh(),
-            style: Theme.of(context).textTheme.bodyLarge,
-            cursorColor: AzarPalette.accent,
-            decoration: const InputDecoration(
+            style: const TextStyle(color: AzarPalette.text, fontSize: 14),
+            cursorColor: AzarPalette.primary,
+            decoration: InputDecoration(
               hintText: 'Nickname ara, Enter',
-              isDense: true,
-              prefixIcon: Icon(Icons.search, color: AzarPalette.textDim, size: 18),
-              border: UnderlineInputBorder(borderSide: BorderSide(color: AzarPalette.line)),
-              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AzarPalette.line)),
-              focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AzarPalette.accent, width: 2)),
+              hintStyle: const TextStyle(color: AzarPalette.textFaint),
+              prefixIcon: const Icon(Icons.search_rounded, color: AzarPalette.textDim, size: 18),
+              filled: true,
+              fillColor: AzarPalette.surface,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AzarPalette.line),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AzarPalette.line),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AzarPalette.primary, width: 1.5),
+              ),
             ),
           ),
         ),
         Expanded(
           child: RefreshIndicator(
+            color: AzarPalette.primary,
             onRefresh: _refresh,
             child: FutureBuilder<List<Map<String, dynamic>>>(
               future: _future,
@@ -410,16 +488,11 @@ class _UsersTabState extends State<_UsersTab> {
                 if (snap.connectionState == ConnectionState.waiting) return const _Loading();
                 if (snap.hasError) return _ErrorBox(message: '${snap.error}');
                 final users = snap.data ?? const [];
-                if (users.isEmpty) {
-                  return ListView(children: [
-                    const SizedBox(height: 80),
-                    Center(child: Text('Kullanıcı yok.',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim))),
-                  ]);
-                }
+                if (users.isEmpty) return _Empty(icon: Icons.person_outline_rounded, text: 'Kullanıcı yok');
                 return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  itemBuilder: (_, i) => _UserTile(profile: users[i], onChanged: _refresh),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  itemBuilder: (_, i) => _UserTile(profile: users[i], onChanged: _refresh)
+                      .animate().fadeIn(duration: 300.ms, delay: (i * 30).ms),
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemCount: users.length,
                 );
@@ -443,44 +516,83 @@ class _UserTile extends StatelessWidget {
     Duration duration = const Duration(hours: 24);
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AzarPalette.surface,
-        title: const Text('Yasakla', style: TextStyle(color: AzarPalette.text)),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-            controller: reasonCtrl,
-            style: const TextStyle(color: AzarPalette.text),
-            decoration: const InputDecoration(labelText: 'Sebep'),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: AzarPalette.surfaceGradient,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AzarPalette.line),
           ),
-          const SizedBox(height: 12),
-          StatefulBuilder(builder: (ctx, set) {
-            return Wrap(
-              spacing: 8,
-              children: [
-                _DurChip(label: '1 saat',   on: duration == const Duration(hours: 1),   tap: () => set(() => duration = const Duration(hours: 1))),
-                _DurChip(label: '24 saat',  on: duration == const Duration(hours: 24),  tap: () => set(() => duration = const Duration(hours: 24))),
-                _DurChip(label: '7 gün',    on: duration == const Duration(days: 7),    tap: () => set(() => duration = const Duration(days: 7))),
-                _DurChip(label: '30 gün',   on: duration == const Duration(days: 30),   tap: () => set(() => duration = const Duration(days: 30))),
-              ],
-            );
-          }),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Vazgeç')),
-          TextButton(
-            onPressed: () async {
-              await AdminRepo.instance.banUser(
-                userId: profile['id'] as String,
-                reason: reasonCtrl.text,
-                duration: duration,
-                createdBy: me,
-              );
-              if (ctx.mounted) Navigator.pop(ctx);
-              await onChanged();
-            },
-            child: const Text('YASAKLA', style: TextStyle(color: AzarPalette.danger)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Yasakla', style: Theme.of(ctx).textTheme.titleLarge),
+              const SizedBox(height: 14),
+              TextField(
+                controller: reasonCtrl,
+                style: const TextStyle(color: AzarPalette.text),
+                cursorColor: AzarPalette.primary,
+                decoration: InputDecoration(
+                  labelText: 'Sebep',
+                  labelStyle: const TextStyle(color: AzarPalette.textDim),
+                  filled: true,
+                  fillColor: AzarPalette.surfaceHigh,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AzarPalette.line),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AzarPalette.line),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AzarPalette.primary, width: 1.5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              StatefulBuilder(builder: (ctx, set) {
+                return Wrap(
+                  spacing: 8, runSpacing: 8,
+                  children: [
+                    _DurChip(label: '1 saat',  on: duration == const Duration(hours: 1),  tap: () => set(() => duration = const Duration(hours: 1))),
+                    _DurChip(label: '24 saat', on: duration == const Duration(hours: 24), tap: () => set(() => duration = const Duration(hours: 24))),
+                    _DurChip(label: '7 gün',   on: duration == const Duration(days: 7),   tap: () => set(() => duration = const Duration(days: 7))),
+                    _DurChip(label: '30 gün',  on: duration == const Duration(days: 30),  tap: () => set(() => duration = const Duration(days: 30))),
+                  ],
+                );
+              }),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(child: GhostButton(label: 'Vazgeç', onTap: () => Navigator.pop(ctx), height: 44)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GradientButton(
+                      label: 'YASAKLA',
+                      onTap: () async {
+                        await AdminRepo.instance.banUser(
+                          userId: profile['id'] as String,
+                          reason: reasonCtrl.text,
+                          duration: duration,
+                          createdBy: me,
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        await onChanged();
+                      },
+                      gradient: const LinearGradient(colors: [AzarPalette.danger, Color(0xFFFF7A8A)]),
+                      height: 44,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -491,44 +603,75 @@ class _UserTile extends StatelessWidget {
     final nick = (profile['nickname'] as String?) ?? '—';
     final role = (profile['role'] as String?) ?? 'user';
     final banned = (profile['is_banned'] as bool?) ?? false;
-
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AzarPalette.surface,
-        border: Border.all(color: banned ? AzarPalette.danger : AzarPalette.line),
+        gradient: AzarPalette.surfaceGradient,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: banned ? AzarPalette.danger.withValues(alpha: 0.6) : AzarPalette.line),
       ),
       child: Row(
         children: [
+          Container(
+            width: 38, height: 38,
+            decoration: BoxDecoration(
+              gradient: banned
+                  ? const LinearGradient(colors: [AzarPalette.danger, Color(0xFFFF7A8A)])
+                  : AzarPalette.brandGradient,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              nick.isNotEmpty ? nick.substring(0, 1).toUpperCase() : '?',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  Text(nick, style: Theme.of(context).textTheme.bodyLarge),
-                  if (role != 'user') ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(border: Border.all(color: AzarPalette.accent)),
-                      child: Text(role.toUpperCase(),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AzarPalette.accent)),
-                    ),
+                Row(
+                  children: [
+                    Flexible(child: Text(nick, style: const TextStyle(color: AzarPalette.text, fontSize: 14.5, fontWeight: FontWeight.w600))),
+                    if (role != 'user') ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AzarPalette.secondary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(role.toUpperCase(),
+                            style: const TextStyle(color: AzarPalette.secondary, fontSize: 9.5, fontWeight: FontWeight.w700, letterSpacing: 0.6)),
+                      ),
+                    ],
                   ],
-                ]),
+                ),
                 const SizedBox(height: 2),
-                Text(_short(id),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+                Text(_short(id), style: const TextStyle(color: AzarPalette.textFaint, fontSize: 11, fontFamily: 'monospace')),
               ],
             ),
           ),
-          if (banned)
-            _MiniBtn(label: 'Yasağı Kaldır', onTap: () async {
-              await AdminRepo.instance.unbanUser(id);
-              await onChanged();
-            })
-          else
-            _MiniBtn(label: 'Yasakla', danger: true, onTap: () => _banDialog(context)),
+          const SizedBox(width: 8),
+          banned
+              ? GhostButton(label: 'Yasağı Kaldır', onTap: () async {
+                  await AdminRepo.instance.unbanUser(id);
+                  await onChanged();
+                }, height: 36)
+              : GestureDetector(
+                  onTap: () => _banDialog(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AzarPalette.danger.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AzarPalette.danger.withValues(alpha: 0.5)),
+                    ),
+                    child: const Text('Yasakla',
+                        style: TextStyle(color: AzarPalette.danger, fontSize: 12.5, fontWeight: FontWeight.w700, letterSpacing: 0.4)),
+                  ),
+                ),
         ],
       ),
     );
@@ -543,40 +686,40 @@ class _DurChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
         onTap: tap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
-            color: on ? AzarPalette.accent : AzarPalette.surfaceUp,
-            border: Border.all(color: on ? AzarPalette.accent : AzarPalette.line),
+            gradient: on ? AzarPalette.brandGradient : null,
+            color: on ? null : AzarPalette.surfaceHigh,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: on ? Colors.transparent : AzarPalette.line),
           ),
-          child: Text(label,
-              style: TextStyle(color: on ? AzarPalette.bg : AzarPalette.text, fontSize: 13)),
+          child: Text(label, style: TextStyle(color: on ? Colors.white : AzarPalette.text, fontSize: 13, fontWeight: on ? FontWeight.w700 : FontWeight.w500)),
         ),
       );
 }
 
 // ============================================================================
-// Bans tab
+// Bans
 // ============================================================================
 
 class _BansTab extends StatefulWidget {
   const _BansTab();
-
   @override
   State<_BansTab> createState() => _BansTabState();
 }
 
 class _BansTabState extends State<_BansTab> {
   late Future<List<Map<String, dynamic>>> _future = AdminRepo.instance.activeBans();
-
   Future<void> _refresh() async {
     setState(() => _future = AdminRepo.instance.activeBans());
     await _future;
   }
-
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
+      color: AzarPalette.primary,
       onRefresh: _refresh,
       child: FutureBuilder<List<Map<String, dynamic>>>(
         future: _future,
@@ -584,16 +727,11 @@ class _BansTabState extends State<_BansTab> {
           if (snap.connectionState == ConnectionState.waiting) return const _Loading();
           if (snap.hasError) return _ErrorBox(message: '${snap.error}');
           final bans = snap.data ?? const [];
-          if (bans.isEmpty) {
-            return ListView(children: [
-              const SizedBox(height: 80),
-              Center(child: Text('Aktif yasak yok.',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AzarPalette.textDim))),
-            ]);
-          }
+          if (bans.isEmpty) return _Empty(icon: Icons.gavel_outlined, text: 'Aktif yasak yok');
           return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemBuilder: (_, i) => _BanTile(ban: bans[i], onChanged: _refresh),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            itemBuilder: (_, i) => _BanTile(ban: bans[i], onChanged: _refresh)
+                .animate().fadeIn(duration: 300.ms, delay: (i * 30).ms),
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemCount: bans.length,
           );
@@ -607,39 +745,56 @@ class _BanTile extends StatelessWidget {
   const _BanTile({required this.ban, required this.onChanged});
   final Map<String, dynamic> ban;
   final Future<void> Function() onChanged;
-
   @override
   Widget build(BuildContext context) {
     final userId = ban['user_id'] as String?;
     final reason = (ban['reason'] as String?) ?? '-';
     final until = ban['until'] == null ? null : DateTime.tryParse(ban['until'] as String);
     final source = (ban['source'] as String?) ?? 'manual';
-
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: AzarPalette.surface, border: Border.all(color: AzarPalette.danger)),
+      decoration: BoxDecoration(
+        gradient: AzarPalette.surfaceGradient,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AzarPalette.danger.withValues(alpha: 0.55)),
+      ),
       child: Row(
         children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+              color: AzarPalette.danger.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.gavel_rounded, color: AzarPalette.danger, size: 16),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(reason, style: Theme.of(context).textTheme.bodyLarge),
+                Text(reason, style: const TextStyle(color: AzarPalette.text, fontSize: 14, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
                 Text(
                   '${_short(userId ?? "-")} • ${source.toUpperCase()}'
                   '${until != null ? " • ${until.toLocal().toString().substring(0, 16)}" : " • kalıcı"}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                  style: const TextStyle(color: AzarPalette.textFaint, fontSize: 11, fontFamily: 'monospace'),
                 ),
               ],
             ),
           ),
-          _MiniBtn(label: 'Kaldır', onTap: () async {
-            if (userId != null) {
-              await AdminRepo.instance.unbanUser(userId);
-              await onChanged();
-            }
-          }),
+          const SizedBox(width: 8),
+          GhostButton(
+            label: 'Kaldır',
+            height: 36,
+            onTap: () async {
+              if (userId != null) {
+                await AdminRepo.instance.unbanUser(userId);
+                await onChanged();
+              }
+            },
+          ),
         ],
       ),
     );
@@ -647,35 +802,14 @@ class _BanTile extends StatelessWidget {
 }
 
 // ============================================================================
-// Shared bits
+// Shared
 // ============================================================================
-
-class _MiniBtn extends StatelessWidget {
-  const _MiniBtn({required this.label, required this.onTap, this.danger = false});
-  final String label;
-  final VoidCallback onTap;
-  final bool danger;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = danger ? AzarPalette.danger : AzarPalette.text;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(border: Border.all(color: color)),
-        child: Text(label,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(color: color, letterSpacing: 1.0)),
-      ),
-    );
-  }
-}
 
 class _Loading extends StatelessWidget {
   const _Loading();
   @override
   Widget build(BuildContext context) =>
-      const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AzarPalette.accent, strokeWidth: 2)));
+      const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AzarPalette.primary, strokeWidth: 2.4)));
 }
 
 class _ErrorBox extends StatelessWidget {
@@ -683,13 +817,44 @@ class _ErrorBox extends StatelessWidget {
   final String message;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(border: Border.all(color: AzarPalette.danger)),
-          child: Text(message, style: const TextStyle(color: AzarPalette.danger)),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AzarPalette.danger.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AzarPalette.danger.withValues(alpha: 0.4)),
+          ),
+          child: Text(message, style: const TextStyle(color: AzarPalette.danger, fontSize: 13)),
         ),
       );
+}
+
+class _Empty extends StatelessWidget {
+  const _Empty({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        const SizedBox(height: 80),
+        Center(
+          child: Container(
+            width: 56, height: 56,
+            decoration: BoxDecoration(
+              color: AzarPalette.surfaceHigh,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, color: AzarPalette.textDim, size: 24),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Center(child: Text(text, style: const TextStyle(color: AzarPalette.textDim, fontSize: 14))),
+      ],
+    );
+  }
 }
 
 String _short(String id) => id.length > 12 ? '${id.substring(0, 8)}…${id.substring(id.length - 4)}' : id;
@@ -698,6 +863,6 @@ String _relative(DateTime dt) {
   final d = DateTime.now().toUtc().difference(dt.toUtc());
   if (d.inMinutes < 1) return 'az önce';
   if (d.inMinutes < 60) return '${d.inMinutes}dk';
-  if (d.inHours   < 24) return '${d.inHours}sa';
+  if (d.inHours < 24)   return '${d.inHours}sa';
   return '${d.inDays}g';
 }
