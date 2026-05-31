@@ -46,11 +46,14 @@ jobs:
           # Ensure .htaccess lands in build output (Flutter skips dotfiles).
           cp web/.htaccess build/web/.htaccess
 
-      - name: Setup SSH
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Trust VPS host key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p ${{ secrets.SSH_PORT || 22 }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
       - name: Rsync to VPS
@@ -59,7 +62,7 @@ jobs:
           PORT: ${{ secrets.SSH_PORT || 22 }}
         run: |
           rsync -az --delete \
-            -e "ssh -p $PORT -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            -e "ssh -p $PORT" \
             app/build/web/ \
             ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:"$DEST/"
 
