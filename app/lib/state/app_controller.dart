@@ -5,6 +5,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../auth/auth_controller.dart';
 import '../config.dart';
+import '../services/device_fp_service.dart';
 import '../signaling/signaling.dart';
 import '../webrtc/media.dart';
 import '../webrtc/peer.dart';
@@ -95,7 +96,8 @@ class AppController extends ChangeNotifier {
       await _signaling!.connect();
       _msgSub = _signaling!.messages.listen(_onMessage);
 
-      _signaling!.hello(name: displayName, gender: gender, peerGender: peerGender);
+      final deviceFp = await DeviceFingerprint.get();
+      _signaling!.hello(name: displayName, gender: gender, peerGender: peerGender, deviceFp: deviceFp);
       _signaling!.enqueue();
     } catch (e) {
       errorMessage = e.toString();

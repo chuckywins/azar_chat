@@ -56,6 +56,11 @@ const ICE_SERVERS = [
 const peers = new Map();
 const queue = [];
 
+// IP → country cache (avoid hammering ipapi.co — free tier = 1000/day).
+const GEO_TTL_MS = 6 * 60 * 60 * 1000; // 6h
+/** @type {Map<string, {country: string|null, at: number}>} */
+const geoCache = new Map();
+
 class Peer {
   constructor(ws) {
     this.id = crypto.randomUUID();           // ephemeral socket id
@@ -67,6 +72,11 @@ class Peer {
     /** @type {'idle' | 'queued' | 'matched'} */
     this.status = 'idle';
     this.matchId = null;
+    this.ip = null;
+    this.country = null;
+    this.ua = null;
+    this.deviceFp = null;       // client-computed SHA-256 of UA+screen+tz+lang
+    this.presenceSynced = false;
   }
 
   send(msg) {
@@ -111,6 +121,104 @@ async function verifyToken(token) {
   } catch (err) {
     console.warn(`[jwt] HS256 verify failed: ${err.message}`);
     return null;
+  }
+}
+
+function getClientIp(req) {
+  // Behind OLS reverse proxy: trust X-Forwarded-For (first hop).
+  const xff = req.headers['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.length > 0) {
+    const first = xff.split(',')[0].trim();
+    if (first) return first;
+  }
+  const real = req.headers['x-real-ip'];
+  if (typeof real === 'string' && real.length > 0) return real.trim();
+  return req.socket.remoteAddress || null;
+}
+
+function normalizeIp(ip) {
+  if (!ip) return null;
+  // strip IPv6-mapped IPv4 prefix and brackets
+  let s = ip.replace(/^::ffff:/i, '').replace(/^\[|\]$/g, '');
+  // strip any port suffix (e.g. ":54321")
+  const lastColon = s.lastIndexOf(':');
+  if (s.indexOf(':') === lastColon && lastColon > -1 && /^\d+$/.test(s.slice(lastColon + 1))) {
+    s = s.slice(0, lastColon);
+  }
+  return s || null;
+}
+
+async function geoLookup(ip) {
+  if (!ip) return null;
+  // Skip private / loopback ranges — they would resolve to null anyway.
+  if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.|::1|fe80:)/i.test(ip)) return null;
+
+  const hit = geoCache.get(ip);
+  if (hit && Date.now() - hit.at < GEO_TTL_MS) return hit.country;
+
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 2000);
+    const res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/country/`, {
+      signal: ctl.signal,
+      headers: { 'User-Agent': 'kerochat-signaling/1.0' },
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      console.warn(`[geo] ipapi ${ip} → HTTP ${res.status}`);
+      geoCache.set(ip, { country: null, at: Date.now() });
+      return null;
+    }
+    const text = (await res.text()).trim();
+    // Body is just a 2-letter country code, e.g. "TR", or "Undefined" on failure.
+    const country = /^[A-Z]{2}$/.test(text) ? text : null;
+    geoCache.set(ip, { country, at: Date.now() });
+    return country;
+  } catch (e) {
+    console.warn(`[geo] lookup failed for ${ip}: ${e.message}`);
+    geoCache.set(ip, { country: null, at: Date.now() });
+    return null;
+  }
+}
+
+async function checkBanEvasion(ip, deviceFp) {
+  if (!supabase) return null;
+  if (!ip && !deviceFp) return null;
+  try {
+    const { data, error } = await supabase.rpc('check_ban_evasion', {
+      p_ip: ip,
+      p_device_fp_hash: deviceFp,
+    });
+    if (error) {
+      console.error(`[ban-evasion] RPC error: ${error.message}`);
+      return null;
+    }
+    if (Array.isArray(data) && data.length > 0) {
+      const row = data[0];
+      console.log(`[ban-evasion] MATCH ip=${ip} fp=${deviceFp?.slice(0,8)} reason=${row.reason || 'n/a'}`);
+      return row;
+    }
+    return null;
+  } catch (e) {
+    console.error(`[ban-evasion] EXCEPTION: ${e.message}`);
+    return null;
+  }
+}
+
+async function syncPresence(peer) {
+  if (!supabase || !peer.userId || peer.presenceSynced) return;
+  try {
+    const { error } = await supabase.rpc('update_presence_info', {
+      p_user_id:        peer.userId,
+      p_ip:             peer.ip,
+      p_country:        peer.country,
+      p_ua:             peer.ua,
+      p_device_fp_hash: peer.deviceFp,
+    });
+    if (error) console.warn(`[presence] update failed for ${peer.userId.slice(0,8)}: ${error.message}`);
+    else peer.presenceSynced = true;
+  } catch (e) {
+    console.error(`[presence] EXCEPTION: ${e.message}`);
   }
 }
 
@@ -229,6 +337,22 @@ async function handleHello(peer, msg) {
     const v = await verifyToken(msg.token);
     if (v) peer.userId = v.sub;
   }
+
+  // Client-supplied device fingerprint (already hashed). 64-char hex expected.
+  if (typeof msg.deviceFp === 'string' && /^[a-f0-9]{16,128}$/i.test(msg.deviceFp)) {
+    peer.deviceFp = msg.deviceFp.toLowerCase();
+  }
+
+  // Now that we know the user + fingerprint, run ban-evasion gate.
+  const evasion = await checkBanEvasion(peer.ip, peer.deviceFp);
+  if (evasion) {
+    peer.send({ type: 'error', code: 'ban_evasion', message: 'Bu cihaz/IP yasaklı bir hesapla ilişkili.' });
+    try { peer.ws.close(1008, 'ban_evasion'); } catch (_) {}
+    return;
+  }
+
+  // Backfill profile presence (country, ip, ua, fp) for the signed-in user.
+  await syncPresence(peer);
 }
 
 function handleSignal(peer, msg) {
@@ -279,6 +403,11 @@ wss.on('connection', async (ws, req) => {
   const peer = new Peer(ws);
   peers.set(peer.id, peer);
 
+  // Capture client environment up-front (used for ban-evasion + geo).
+  peer.ip = normalizeIp(getClientIp(req));
+  peer.ua = (req.headers['user-agent'] || '').slice(0, 300) || null;
+  peer.country = await geoLookup(peer.ip);
+
   // Try to extract token from connect URL.
   try {
     const url = new URL(req.url, 'http://x');
@@ -289,7 +418,7 @@ wss.on('connection', async (ws, req) => {
     }
   } catch (_) {/* ignore */}
 
-  console.log(`[connect] ${peer.id.slice(0, 8)} user=${peer.userId?.slice(0,8) || 'guest'} from ${req.socket.remoteAddress} (active=${peers.size})`);
+  console.log(`[connect] ${peer.id.slice(0, 8)} user=${peer.userId?.slice(0,8) || 'guest'} ip=${peer.ip} country=${peer.country || '?'} (active=${peers.size})`);
 
   peer.send({ type: 'welcome', selfId: peer.id, iceServers: ICE_SERVERS });
 

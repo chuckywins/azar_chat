@@ -87,6 +87,22 @@ class AdminRepo {
     });
   }
 
+  /// Bans the user via the v6 RPC, which also captures their last known
+  /// IP + device fingerprint into the bans row so future signups from the
+  /// same browser/IP get rejected at signaling handshake.
+  Future<void> banUserWithEvasion({
+    required String userId,
+    String? reason,
+    Duration? duration,
+  }) async {
+    final expiresAt = duration == null ? null : DateTime.now().toUtc().add(duration).toIso8601String();
+    await _c.rpc('admin_ban_user_evasion', params: {
+      'p_user_id':    userId,
+      'p_reason':     reason,
+      'p_expires_at': expiresAt,
+    });
+  }
+
   Future<void> unbanUser(String userId) async {
     await _c.from('profiles').update({
       'is_banned': false,

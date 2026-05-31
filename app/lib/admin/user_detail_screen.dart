@@ -5,6 +5,7 @@ import '../kc/atoms.dart';
 import '../kc/tokens.dart';
 import '../services/coin_service.dart';
 import '../services/vip_service.dart';
+import 'admin_repo.dart';
 
 class AdminUserDetailScreen extends StatefulWidget {
   const AdminUserDetailScreen({super.key, required this.userId});
@@ -188,6 +189,67 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen> {
     }
   }
 
+  Future<void> _banWithEvasion() async {
+    final reasonCtrl = TextEditingController();
+    String range = 'perm';
+    final ok = await showDialog<bool>(context: context, builder: (ctx) {
+      return StatefulBuilder(builder: (ctx, set) {
+        return Dialog(
+          backgroundColor: KC.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.fingerprint_rounded, color: KC.danger, size: 22),
+                const SizedBox(width: 8),
+                Text('Cihaz + IP ile yasakla', style: kcSora(17, w: FontWeight.w700)),
+              ]),
+              const SizedBox(height: 10),
+              Text('Kullanıcının son bilinen IP\'si ve cihaz parmak izi bans tablosuna işlenir; aynı tarayıcı/IP\'den yeni hesap açmaya çalışırsa signaling el sıkışmasında reddedilir.',
+                style: kcManrope(12.5, color: KC.muted, height: 1.4)),
+              const SizedBox(height: 14),
+              TextField(controller: reasonCtrl, style: const TextStyle(color: KC.text),
+                decoration: _deco('Sebep (opsiyonel)')),
+              const SizedBox(height: 12),
+              Wrap(spacing: 6, children: [
+                for (final r in [('perm','Süresiz'), ('30d','30 gün'), ('7d','7 gün'), ('24h','24 saat')])
+                  KCChip(label: r.$2, active: range == r.$1, onTap: () => set(() => range = r.$1)),
+              ]),
+              const SizedBox(height: 16),
+              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false),
+                  child: Text('Vazgeç', style: kcManrope(13.5, color: KC.muted))),
+                const SizedBox(width: 6),
+                KCButton(label: 'YASAKLA', icon: Icons.gavel_rounded, variant: KCButtonVariant.danger,
+                  size: KCButtonSize.md, onTap: () => Navigator.pop(ctx, true)),
+              ]),
+            ]),
+          ),
+        );
+      });
+    });
+    if (ok != true || !mounted) return;
+    Duration? dur;
+    switch (range) {
+      case '24h': dur = const Duration(hours: 24); break;
+      case '7d':  dur = const Duration(days: 7);   break;
+      case '30d': dur = const Duration(days: 30);  break;
+      case 'perm': default: dur = null;
+    }
+    try {
+      await AdminRepo.instance.banUserWithEvasion(
+        userId: widget.userId,
+        reason: reasonCtrl.text.trim().isEmpty ? null : reasonCtrl.text.trim(),
+        duration: dur,
+      );
+      _toast('🚫 Cihaz + IP ile yasaklandı');
+      await _load();
+    } catch (e) {
+      _toast('Hata: $e');
+    }
+  }
+
   void _toast(String msg) => ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(backgroundColor: KC.surface2,
       content: Text(msg, style: const TextStyle(color: KC.text)),
@@ -304,6 +366,14 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen> {
                     ]),
                     const SizedBox(height: 12),
                     KCButton(label: 'KAYDET', icon: Icons.save_rounded, onTap: _saveProfile),
+                    const SizedBox(height: 10),
+                    KCButton(
+                      label: 'CİHAZ + IP ile YASAKLA',
+                      icon: Icons.fingerprint_rounded,
+                      variant: KCButtonVariant.danger,
+                      size: KCButtonSize.md,
+                      onTap: _banWithEvasion,
+                    ),
                   ]),
                 ),
                 const SizedBox(height: 16),

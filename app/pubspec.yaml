@@ -21,6 +21,7 @@ dependencies:
   fl_chart: ^0.69.0
   share_plus: ^10.0.0
   http: ^1.2.2
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

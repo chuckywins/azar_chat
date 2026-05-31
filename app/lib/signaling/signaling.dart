@@ -58,8 +58,10 @@ class Signaling {
     _channel!.sink.add(jsonEncode(msg));
   }
 
-  void hello({String? name, String? gender, String? peerGender}) =>
-      _send({'type': 'hello', 'name': ?name, 'gender': ?gender, 'peerGender': ?peerGender});
+  void hello({String? name, String? gender, String? peerGender, String? deviceFp}) =>
+      _send({'type': 'hello',
+        'name': ?name, 'gender': ?gender, 'peerGender': ?peerGender,
+        'deviceFp': ?deviceFp});
 
   void enqueue() => _send({'type': 'enqueue'});
 
