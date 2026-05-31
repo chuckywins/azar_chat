@@ -46,34 +46,55 @@ jobs:
           # Ensure .htaccess lands in build output (Flutter skips dotfiles).
           cp web/.htaccess build/web/.htaccess
 
-      - name: Setup SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
+      # Pack everything (including dotfiles via `.`) into one tarball
+      # — sidesteps SSH-key/libcrypto parsing issues by using the same
+      # appleboy stack as the signaling deploy.
+      - name: Pack build into tarball
+        run: tar -czf web.tar.gz -C app/build/web .
+
+      - name: Upload tarball to VPS
+        uses: appleboy/scp-action@v0.1.7
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: web.tar.gz
+          target: /tmp/azar_web_deploy/
+          overwrite: true
 
-      - name: Trust VPS host key
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p ${{ secrets.SSH_PORT || 22 }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Rsync to VPS
-        env:
-          DEST: ${{ secrets.WEB_DEPLOY_PATH }}
-          PORT: ${{ secrets.SSH_PORT || 22 }}
-        run: |
-          rsync -az --delete \
-            -e "ssh -p $PORT" \
-            app/build/web/ \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:"$DEST/"
-
-      - name: Fix permissions on VPS
+      - name: Extract + fix permissions on VPS
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          command_timeout: 2m
+          command_timeout: 3m
+          envs: WEB_DEPLOY_PATH
           script: |
             set -e
-            bash /opt/azar_chat/infra/vps-fix-web-perms.sh "${{ secrets.WEB_DEPLOY_PATH }}"
+            DEST="${{ secrets.WEB_DEPLOY_PATH }}"
+            TARBALL="/tmp/azar_web_deploy/web.tar.gz"
+
+            if [ ! -d "$DEST" ]; then
+              echo "ERR: $DEST does not exist on VPS" >&2
+              exit 1
+            fi
+            if [ ! -f "$TARBALL" ]; then
+              echo "ERR: tarball missing at $TARBALL" >&2
+              exit 1
+            fi
+
+            echo "==> wiping old contents in $DEST"
+            find "$DEST" -mindepth 1 -delete
+
+            echo "==> extracting tarball"
+            tar -xzf "$TARBALL" -C "$DEST"
+
+            echo "==> running permission fixer"
+            bash /opt/azar_chat/infra/vps-fix-web-perms.sh "$DEST"
+
+            echo "==> cleanup"
+            rm -f "$TARBALL"
+            echo "==> done."
