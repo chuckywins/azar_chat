@@ -1,5 +1,14 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+class IncomingGift {
+  IncomingGift({required this.giftId, required this.senderId, required this.glyph, required this.cost, required this.at});
+  final String giftId;
+  final String senderId;
+  final String glyph;
+  final int cost;
+  final DateTime at;
+}
+
 class GiftCatalogItem {
   GiftCatalogItem({required this.id, required this.name, required this.glyph,
     required this.cost, required this.sortOrder, required this.active});
@@ -64,5 +73,39 @@ class GiftService {
 
   Future<void> adminDelete(String id) async {
     await _c.from('gifts').delete().eq('id', id);
+  }
+
+  // ── Realtime ───────────────────────────────────────────────────────────────
+
+  /// Subscribe to gift_transactions where receiver_id = me.
+  /// Calls [onIncoming] with the glyph (resolved from the catalog).
+  RealtimeChannel subscribeIncoming(String myUserId, void Function(IncomingGift) onIncoming) {
+    return _c.channel('gifts-$myUserId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'gift_transactions',
+          callback: (payload) async {
+            final r = payload.newRecord;
+            if (r['receiver_id'] != myUserId) return;
+            final giftId = r['gift_id'] as String?;
+            String glyph = '🎁';
+            if (giftId != null) {
+              try {
+                final row = await _c.from('gifts').select('glyph').eq('id', giftId).maybeSingle();
+                final g = row?['glyph'] as String?;
+                if (g != null && g.isNotEmpty) glyph = g;
+              } catch (_) {/* keep default */}
+            }
+            onIncoming(IncomingGift(
+              giftId: giftId ?? '',
+              senderId: r['sender_id'] as String,
+              glyph: glyph,
+              cost: (r['cost'] as num?)?.toInt() ?? 0,
+              at: DateTime.tryParse(r['created_at'] as String? ?? '') ?? DateTime.now(),
+            ));
+          },
+        )
+        .subscribe();
   }
 }

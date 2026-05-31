@@ -6,7 +6,6 @@ import '../../services/coin_service.dart';
 import '../../services/vip_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
-import '../mock_data.dart';
 import '../tokens.dart';
 
 class KCStore extends StatefulWidget {
@@ -17,10 +16,12 @@ class KCStore extends StatefulWidget {
 }
 
 class _KCStoreState extends State<KCStore> {
-  String _sel = 'p3';
+  String? _sel;
   int _coins = 0;
   StreamSubscription? _coinSub;
   VipStatus? _vip;
+  List<CoinPack> _packs = const [];
+  bool _loadingPacks = true;
 
   @override
   void initState() {
@@ -31,6 +32,23 @@ class _KCStoreState extends State<KCStore> {
     VipService.instance.myStatus().then((v) {
       if (mounted) setState(() => _vip = v);
     });
+    _loadPacks();
+  }
+
+  Future<void> _loadPacks() async {
+    try {
+      final list = await CoinService.instance.listPacks();
+      if (!mounted) return;
+      setState(() {
+        _packs = list;
+        _loadingPacks = false;
+        _sel ??= list.firstWhere((p) => p.popular, orElse: () => list.isNotEmpty ? list.first : CoinPack(
+          id: '-', coins: 0, priceText: '-', sortOrder: 0, popular: false, active: false,
+        )).id;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingPacks = false);
+    }
   }
 
   @override
@@ -39,7 +57,13 @@ class _KCStoreState extends State<KCStore> {
     super.dispose();
   }
 
-  KCCoinPack get _pack => kcCoinPacks.firstWhere((p) => p.id == _sel);
+  CoinPack? get _pack {
+    if (_sel == null || _packs.isEmpty) return null;
+    for (final p in _packs) {
+      if (p.id == _sel) return p;
+    }
+    return _packs.first;
+  }
 
   static const _benefits = [
     'Cinsiyet filtresi',
@@ -63,7 +87,7 @@ class _KCStoreState extends State<KCStore> {
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () => ctx.setTab(ctx.lastTab),
+                    onTap: () => ctx.back(),
                     child: Container(
                       width: 40, height: 40,
                       decoration: BoxDecoration(
@@ -71,7 +95,10 @@ class _KCStoreState extends State<KCStore> {
                         border: Border.all(color: KC.border),
                       ),
                       alignment: Alignment.center,
-                      child: const Icon(Icons.chevron_left_rounded, color: KC.text, size: 22),
+                      child: Icon(
+                        ctx.hasActiveCall ? Icons.videocam_rounded : Icons.chevron_left_rounded,
+                        color: KC.text, size: 22,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -154,12 +181,12 @@ class _KCStoreState extends State<KCStore> {
               child: GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: kcCoinPacks.length,
+                itemCount: _packs.length,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2, mainAxisSpacing: 11, crossAxisSpacing: 11, childAspectRatio: 0.95,
                 ),
                 itemBuilder: (_, i) {
-                  final p = kcCoinPacks[i];
+                  final p = _packs[i];
                   final on = _sel == p.id;
                   return GestureDetector(
                     onTap: () => setState(() => _sel = p.id),
@@ -181,13 +208,13 @@ class _KCStoreState extends State<KCStore> {
                               const KCDiamond(size: 34),
                               const SizedBox(height: 6),
                               Text(kcNum(p.coins), style: kcSora(22, w: FontWeight.w700)),
-                              if (p.bonus != null)
-                                Text('${p.bonus} bonus', style: kcManrope(12, w: FontWeight.w700, color: KC.accent)),
+                              if (p.bonusText != null)
+                                Text('${p.bonusText} bonus', style: kcManrope(12, w: FontWeight.w700, color: KC.accent)),
                               const SizedBox(height: 10),
                               Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
                                 decoration: BoxDecoration(color: KC.surface2, borderRadius: BorderRadius.circular(10)),
-                                child: Text(p.price, style: kcSora(14.5, w: FontWeight.w700)),
+                                child: Text(p.priceText, style: kcSora(14.5, w: FontWeight.w700)),
                               ),
                             ],
                           ),
@@ -254,9 +281,11 @@ class _KCStoreState extends State<KCStore> {
                 ),
               ),
               child: KCButton(
-                label: '${_pack.price} · ${kcNum(_pack.coins)} coin satın al',
+                label: _pack == null
+                    ? (_loadingPacks ? 'Paketler yükleniyor...' : 'Paket yok')
+                    : '${_pack!.priceText} · ${kcNum(_pack!.coins)} coin satın al',
                 icon: Icons.diamond_outlined,
-                onTap: () => ctx.toast('Ödeme entegrasyonu yakında (Stripe)'),
+                onTap: _pack == null ? null : () => ctx.toast('Ödeme entegrasyonu yakında (Stripe)'),
               ),
             ),
           ),

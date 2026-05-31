@@ -113,10 +113,13 @@ class _KCThreadState extends State<KCThread> {
           ),
           child: Row(children: [
             GestureDetector(
-              onTap: () => ctx.setTab('chats'),
+              onTap: () => ctx.back(),
               child: Container(width: 38, height: 38,
                 alignment: Alignment.center,
-                child: const Icon(Icons.chevron_left_rounded, color: KC.text, size: 24)),
+                child: Icon(
+                  ctx.hasActiveCall ? Icons.videocam_rounded : Icons.chevron_left_rounded,
+                  color: KC.text, size: 24,
+                )),
             ),
             const SizedBox(width: 4),
             KCAvatar(user: p, size: 40),

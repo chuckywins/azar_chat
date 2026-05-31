@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../services/gift_service.dart';
 import '../state/app_controller.dart';
 import 'mock_data.dart';
 import 'real_data.dart';
@@ -39,6 +42,15 @@ class KCContext extends ChangeNotifier {
   String activeTab = 'home';           // 'home' | 'chats' | 'profile'
   String activeScreen = 'home';        // mirrors React `screen` state
   String lastTab = 'home';             // remember last bottom tab when in store
+  final List<String> _screenStack = ['home'];
+
+  bool get hasActiveCall => app.phase == AppPhase.inCall;
+
+  /// Incoming gift (from peer) — short-lived burst displayed by KC.VideoChat.
+  IncomingGift? incomingGiftBurst;
+  Timer? _giftBurstTimer;
+  String? _giftSubscribedFor;
+  RealtimeChannel? _giftChannel;
 
   void setTab(String t) {
     if (t == 'home' || t == 'chats' || t == 'profile') {
@@ -46,12 +58,38 @@ class KCContext extends ChangeNotifier {
     }
     activeTab = ['home','chats','profile'].contains(t) ? t : activeTab;
     activeScreen = t;
+    _screenStack
+      ..clear()
+      ..add(t);
     notifyListeners();
   }
 
   void setScreen(String s) {
+    if (activeScreen == s) return;
+    if (_screenStack.length > 5) _screenStack.removeAt(0);
+    _screenStack.add(s);
     activeScreen = s;
     notifyListeners();
+  }
+
+  /// Smart back: if we're in a sub-screen (thread/store/video pushed on top of tabs),
+  /// pop. If an active call is going, route back to 'video'. Otherwise lastTab.
+  void back() {
+    if (_screenStack.length > 1) {
+      _screenStack.removeLast();
+      activeScreen = _screenStack.last;
+      notifyListeners();
+      return;
+    }
+    if (hasActiveCall) {
+      activeScreen = 'video';
+      _screenStack
+        ..clear()
+        ..addAll(['video']);
+      notifyListeners();
+      return;
+    }
+    setTab(lastTab);
   }
 
   void setFilters(KCFilters f) {
@@ -99,6 +137,24 @@ class KCContext extends ChangeNotifier {
     setTab('home');
   }
 
+  void _subscribeIncomingGifts() {
+    final uid = app.peerUserId == null ? null : Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    if (_giftSubscribedFor == uid && _giftChannel != null) return;
+    _giftChannel?.unsubscribe();
+    _giftSubscribedFor = uid;
+    _giftChannel = GiftService.instance.subscribeIncoming(uid, (g) {
+      incomingGiftBurst = g;
+      toast('Sana ${g.glyph} hediye geldi!');
+      notifyListeners();
+      _giftBurstTimer?.cancel();
+      _giftBurstTimer = Timer(const Duration(milliseconds: 2200), () {
+        incomingGiftBurst = null;
+        notifyListeners();
+      });
+    });
+  }
+
   void _onAppChange() {
     // Reflect AppController phase changes into the visible KC screen.
     switch (app.phase) {
@@ -110,14 +166,13 @@ class KCContext extends ChangeNotifier {
         if (activeScreen != 'matching') setScreen('matching');
         break;
       case AppPhase.inCall:
-        // Sync partner KCUser shape from real peer info.
-        // Prefer the auth user UUID (so like/message work against profiles table);
-        // fall back to socket id only for display.
         final realId = app.peerUserId ?? app.peerId;
         final pname = app.peerName ?? 'Yabancı';
         if (realId != null) {
           partner = kcUserFromConversationRow(peerId: realId, nickname: pname);
         }
+        // Start subscribing to incoming gifts for the local user.
+        _subscribeIncomingGifts();
         if (activeScreen != 'video') setScreen('video');
         break;
       case AppPhase.ended:
@@ -135,6 +190,8 @@ class KCContext extends ChangeNotifier {
   @override
   void dispose() {
     _toastTimer?.cancel();
+    _giftBurstTimer?.cancel();
+    _giftChannel?.unsubscribe();
     app.removeListener(_onAppChange);
     app.dispose();
     super.dispose();

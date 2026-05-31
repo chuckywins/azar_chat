@@ -208,10 +208,18 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
           ),
         ),
 
-        // gift fly fx
+        // gift fly fx (sender side — local feedback)
         if (_giftFxKey != null && _giftFxGlyph != null)
           Positioned(left: 0, right: 0, bottom: 220,
             child: Center(child: KCGiftFly(key: _giftFxKey!, glyph: _giftFxGlyph!))),
+
+        // incoming gift fx (receiver side — realtime from peer)
+        if (ctx.incomingGiftBurst != null)
+          Positioned(left: 0, right: 0, bottom: 220,
+            child: Center(child: KCGiftFly(
+              key: ValueKey('in-${ctx.incomingGiftBurst!.at.microsecondsSinceEpoch}'),
+              glyph: ctx.incomingGiftBurst!.glyph,
+            ))),
 
         // controls dock
         Positioned(

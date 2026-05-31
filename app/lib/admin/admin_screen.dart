@@ -8,6 +8,7 @@ import '../auth/auth_controller.dart';
 import '../theme.dart';
 import 'admin_repo.dart';
 import 'announcements_tab.dart';
+import 'coin_packs_tab.dart';
 import 'gifts_tab.dart';
 import 'live_stats_service.dart';
 import 'user_detail_screen.dart';
@@ -19,7 +20,7 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 6, vsync: this);
+  late final TabController _tabs = TabController(length: 7, vsync: this);
 
   @override
   void dispose() { _tabs.dispose(); super.dispose(); }
@@ -98,6 +99,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     Tab(text: 'YASAKLAR'),
                     Tab(text: 'DUYURULAR'),
                     Tab(text: 'HEDİYELER'),
+                    Tab(text: 'PAKETLER'),
                   ],
                 ),
               ),
@@ -112,6 +114,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     _BansTab(),
                     AnnouncementsTab(),
                     GiftsTab(),
+                    CoinPacksTab(),
                   ],
                 ),
               ),
