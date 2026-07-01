@@ -10,6 +10,8 @@ import 'screens/matching.dart';
 import 'screens/notifications.dart';
 import 'screens/onboarding.dart';
 import 'screens/profile.dart';
+import 'screens/room.dart';
+import 'screens/rooms.dart';
 import 'screens/store.dart';
 import 'screens/thread.dart';
 import 'screens/video_chat.dart';
@@ -61,7 +63,7 @@ class _KCAppState extends State<KCApp> {
   @override
   Widget build(BuildContext context) {
     final screen = _ctx.activeScreen;
-    final showTabs = ['home', 'chats', 'profile'].contains(screen);
+    final showTabs = ['home', 'rooms', 'chats', 'profile'].contains(screen);
 
     Widget body;
     switch (screen) {
@@ -69,6 +71,8 @@ class _KCAppState extends State<KCApp> {
       case 'home':       body = const KCHome(); break;
       case 'matching':   body = const KCMatching(); break;
       case 'video':      body = const KCVideoChatScreen(); break;
+      case 'rooms':      body = const KCRoomsScreen(); break;
+      case 'room':       body = const KCRoomScreen(); break;
       case 'profile':    body = const KCProfile(); break;
       case 'store':      body = const KCStore(); break;
       case 'chats':      body = const KCChats(); break;

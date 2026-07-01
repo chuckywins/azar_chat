@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../rooms/room_controller.dart';
 import '../services/gift_service.dart';
 import '../services/messages_service.dart';
 import '../state/app_controller.dart';
@@ -26,12 +27,17 @@ class KCFilters {
 class KCContext extends ChangeNotifier {
   KCContext._() {
     app.addListener(_onAppChange);
+    roomsCtl.onToast = toast;
+    roomsCtl.addListener(_onRoomsChange);
   }
   static final KCContext instance = KCContext._();
 
   /// Real WebRTC / signaling orchestrator.  Shared across all screens.
   final AppController app = AppController();
   bool _appBooted = false;
+
+  /// Voice rooms orchestrator (own socket + audio mesh).
+  final RoomController roomsCtl = RoomController();
 
   KCFilters filters = const KCFilters();
   KCUser? partner;
@@ -58,11 +64,17 @@ class KCContext extends ChangeNotifier {
   RealtimeChannel? _inboxChannel;
   int unreadInbox = 0;
 
+  static const _tabScreens = ['home', 'rooms', 'chats', 'profile'];
+
   void setTab(String t) {
-    if (t == 'home' || t == 'chats' || t == 'profile') {
+    if (_tabScreens.contains(t)) {
       lastTab = t;
     }
-    activeTab = ['home','chats','profile'].contains(t) ? t : activeTab;
+    // Browsing the room list costs a socket — release it when tabbing away.
+    if (t != 'rooms' && roomsCtl.phase == RoomPhase.list) {
+      roomsCtl.close();
+    }
+    activeTab = _tabScreens.contains(t) ? t : activeTab;
     activeScreen = t;
     _screenStack
       ..clear()
@@ -125,13 +137,17 @@ class KCContext extends ChangeNotifier {
 
   // ── Real WebRTC bridge ────────────────────────────────────────────────────
 
-  Future<void> startMatch() async {
+  Future<void> startMatch({String mode = 'video'}) async {
     if (!_appBooted) {
       await app.bootstrap();
       _appBooted = true;
     }
+    // Rooms and 1-1 matching are mutually exclusive — free the mic first.
+    if (roomsCtl.phase != RoomPhase.idle) await roomsCtl.close();
+    final me = kcCurrentUser();
+    app.setProfile(name: me.name);
     setScreen('matching');
-    await app.start();
+    await app.start(mode: mode);
   }
 
   Future<void> nextPartner() async {
@@ -141,6 +157,35 @@ class KCContext extends ChangeNotifier {
   Future<void> leaveCall() async {
     await app.leave();
     setTab('home');
+  }
+
+  // ── Voice rooms bridge ────────────────────────────────────────────────────
+
+  Future<void> openRooms() async {
+    // 1-1 call and rooms are mutually exclusive — hang up first.
+    if (app.phase != AppPhase.idle) await app.leave();
+    final me = kcCurrentUser();
+    roomsCtl.displayName = me.name;
+    if (activeScreen != 'rooms') setTab('rooms');
+    await roomsCtl.open();
+  }
+
+  Future<void> closeRooms() async {
+    await roomsCtl.close();
+  }
+
+  void _onRoomsChange() {
+    switch (roomsCtl.phase) {
+      case RoomPhase.inRoom:
+        if (activeScreen != 'room') setScreen('room');
+        break;
+      case RoomPhase.list:
+        if (activeScreen == 'room') setScreen('rooms');
+        break;
+      default:
+        break;
+    }
+    notifyListeners();
   }
 
   /// Wire up a global inbox listener so the user gets toasts even when not
@@ -228,6 +273,8 @@ class KCContext extends ChangeNotifier {
     _inboxChannel?.unsubscribe();
     app.removeListener(_onAppChange);
     app.dispose();
+    roomsCtl.removeListener(_onRoomsChange);
+    roomsCtl.dispose();
     super.dispose();
   }
 }

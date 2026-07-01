@@ -138,18 +138,54 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
   Widget build(BuildContext context) {
     final ctx = KCContext.instance;
     final p = ctx.partner ?? kcUsers.first;
+    final voice = ctx.app.isVoice;
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        // remote feed (real)
-        Container(
-          color: Colors.black,
-          child: RTCVideoView(
-            ctx.app.remoteRenderer,
-            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+        // remote feed (real) — voice mode: decorative gradient, audio via hidden view
+        if (voice) ...[
+          KCVideoFeed(user: p),
+          // 1×1 hidden video view keeps the remote audio element alive on web.
+          Positioned(
+            left: 0, top: 0, width: 1, height: 1,
+            child: RTCVideoView(ctx.app.remoteRenderer),
           ),
-        ),
+          Center(
+            child: SizedBox(
+              width: 260, height: 260,
+              child: Stack(
+                fit: StackFit.expand,
+                alignment: Alignment.center,
+                children: [
+                  KCPulseRing(color: Colors.white.withValues(alpha: 0.8), delay: Duration.zero),
+                  const KCPulseRing(color: Colors.white70, delay: Duration(milliseconds: 900)),
+                  Center(
+                    child: Container(
+                      width: 130, height: 130,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 3),
+                        boxShadow: [BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 40, spreadRadius: 2)],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: KCAvatar(user: p, size: 130),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ] else
+          Container(
+            color: Colors.black,
+            child: RTCVideoView(
+              ctx.app.remoteRenderer,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            ),
+          ),
         // dim overlay for readability
         Container(
           decoration: const BoxDecoration(
@@ -220,25 +256,26 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
           ),
         ),
 
-        // self PiP (real)
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 70, right: 14,
-          child: Container(
-            width: 96, height: 130,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 2),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 10))],
-              color: Colors.black,
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: RTCVideoView(
-              ctx.app.localRenderer,
-              mirror: true,
-              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+        // self PiP (real) — hidden in voice mode
+        if (!voice)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 70, right: 14,
+            child: Container(
+              width: 96, height: 130,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 2),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 10))],
+                color: Colors.black,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: RTCVideoView(
+                ctx.app.localRenderer,
+                mirror: true,
+                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+              ),
             ),
           ),
-        ),
 
         // gift rain (sender side — local feedback)
         if (_giftFxKey != null && _giftFxGlyph != null)
@@ -295,8 +332,9 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
                       KCIconBtn(icon: ctx.app.micOn ? Icons.mic_rounded : Icons.mic_off,
                         active: !ctx.app.micOn, size: 52, label: 'Mikrofon',
                         onTap: () { ctx.app.toggleMic(); setState(() {}); }),
-                      KCIconBtn(icon: Icons.cameraswitch_rounded, size: 52, label: 'Kamera',
-                        onTap: () => ctx.app.switchCamera()),
+                      if (!voice)
+                        KCIconBtn(icon: Icons.cameraswitch_rounded, size: 52, label: 'Kamera',
+                          onTap: () => ctx.app.switchCamera()),
                       KCIconBtn(icon: _liked ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
                         active: _liked, size: 52, label: 'Beğen', onTap: _like),
                       KCIconBtn(icon: Icons.videogame_asset_rounded, size: 52, label: 'Oyun',

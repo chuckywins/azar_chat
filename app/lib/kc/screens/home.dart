@@ -210,10 +210,25 @@ class _KCHomeState extends State<KCHome> {
                     textAlign: TextAlign.center,
                     style: kcManrope(13, w: FontWeight.w600, color: KC.muted)),
                 const SizedBox(height: 12),
-                KCButton(
-                  label: 'Eşleş',
-                  icon: Icons.videocam_rounded,
-                  onTap: () => ctx.startMatch(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: KCButton(
+                        label: 'Görüntülü',
+                        icon: Icons.videocam_rounded,
+                        onTap: () => ctx.startMatch(),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: KCButton(
+                        label: 'Sesli',
+                        icon: Icons.mic_rounded,
+                        variant: KCButtonVariant.glass,
+                        onTap: () => ctx.startMatch(mode: 'voice'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

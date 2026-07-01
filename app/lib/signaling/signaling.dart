@@ -58,12 +58,12 @@ class Signaling {
     _channel!.sink.add(jsonEncode(msg));
   }
 
-  void hello({String? name, String? gender, String? peerGender, String? deviceFp}) =>
+  void hello({String? name, String? gender, String? peerGender, String? deviceFp, String? mode}) =>
       _send({'type': 'hello',
         'name': ?name, 'gender': ?gender, 'peerGender': ?peerGender,
-        'deviceFp': ?deviceFp});
+        'deviceFp': ?deviceFp, 'mode': ?mode});
 
-  void enqueue() => _send({'type': 'enqueue'});
+  void enqueue({String? mode}) => _send({'type': 'enqueue', 'mode': ?mode});
 
   void signal(String to, Map<String, dynamic> payload) =>
       _send({'type': 'signal', 'to': to, 'payload': payload});
@@ -71,6 +71,27 @@ class Signaling {
   void next() => _send({'type': 'next'});
 
   void leave() => _send({'type': 'leave'});
+
+  // ── rooms ──────────────────────────────────────────────────────────────
+  void roomCreate({required String title, String? topic}) =>
+      _send({'type': 'room_create', 'title': title, 'topic': ?topic});
+
+  void roomJoin(String roomId) => _send({'type': 'room_join', 'roomId': roomId});
+
+  void roomLeave() => _send({'type': 'room_leave'});
+
+  void roomList() => _send({'type': 'room_list'});
+
+  void roomSignal(String to, Map<String, dynamic> payload) =>
+      _send({'type': 'room_signal', 'to': to, 'payload': payload});
+
+  void roomChat(String text) => _send({'type': 'room_chat', 'text': text});
+
+  void roomState({required bool muted}) => _send({'type': 'room_state', 'muted': muted});
+
+  void roomKick(String peerId) => _send({'type': 'room_kick', 'peerId': peerId});
+
+  void roomMute(String peerId) => _send({'type': 'room_mute', 'peerId': peerId});
 
   Future<void> dispose() async {
     await _sub?.cancel();

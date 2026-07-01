@@ -52,6 +52,11 @@ class AppController extends ChangeNotifier {
   void sendGame(Map<String, dynamic> payload) => _peer?.sendGame(payload);
 
   AppPhase phase = AppPhase.idle;
+
+  /// '1-1' matchmaking mode: 'video' or 'voice' (BlindID-style, mic only).
+  String mode = 'video';
+  bool get isVoice => mode == 'voice';
+
   String? selfId;
   String? peerId;
   String? peerName;
@@ -91,11 +96,12 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> start() async {
+  Future<void> start({String mode = 'video'}) async {
     if (phase == AppPhase.connecting || phase == AppPhase.searching || phase == AppPhase.inCall) return;
+    this.mode = mode;
     _setPhase(AppPhase.connecting);
     try {
-      final stream = await _media.start();
+      final stream = await _media.start(cam: mode == 'video');
       localRenderer.srcObject = stream;
 
       _signaling = Signaling(
@@ -106,8 +112,9 @@ class AppController extends ChangeNotifier {
       _msgSub = _signaling!.messages.listen(_onMessage);
 
       final deviceFp = await DeviceFingerprint.get();
-      _signaling!.hello(name: displayName, gender: gender, peerGender: peerGender, deviceFp: deviceFp);
-      _signaling!.enqueue();
+      _signaling!.hello(name: displayName, gender: gender, peerGender: peerGender,
+          deviceFp: deviceFp, mode: mode);
+      _signaling!.enqueue(mode: mode);
     } catch (e) {
       errorMessage = e.toString();
       _setPhase(AppPhase.error);

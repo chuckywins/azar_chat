@@ -56,6 +56,50 @@ const ICE_SERVERS = [
 const peers = new Map();
 const queue = [];
 
+// ------------------------------------------------------------------ rooms
+// In-memory Clubhouse-style voice rooms. Full-mesh audio: cap kept small.
+const ROOM_CAP = 10;
+const ROOM_TITLE_MAX = 60;
+const ROOM_CHAT_MAX = 400;
+
+/** @type {Map<string, Room>} */
+const rooms = new Map();
+
+class Room {
+  constructor({ title, topic, ownerId }) {
+    this.id = crypto.randomBytes(4).toString('hex');
+    this.title = title;
+    this.topic = topic;
+    this.ownerId = ownerId;          // peer id of current owner
+    this.createdAt = Date.now();
+    /** @type {string[]} joins in order — first is oldest (owner succession) */
+    this.memberIds = [];
+  }
+
+  members() {
+    return this.memberIds.map((id) => peers.get(id)).filter(Boolean);
+  }
+
+  memberInfo(p) {
+    return { ...p.publicInfo(), muted: p.muted, isOwner: p.id === this.ownerId };
+  }
+
+  summary() {
+    const owner = peers.get(this.ownerId);
+    return {
+      id: this.id, title: this.title, topic: this.topic,
+      count: this.memberIds.length, cap: ROOM_CAP,
+      ownerName: owner ? owner.name : '—',
+    };
+  }
+
+  broadcast(msg, exceptId = null) {
+    for (const m of this.members()) {
+      if (m.id !== exceptId) m.send(msg);
+    }
+  }
+}
+
 // IP → country cache (avoid hammering ipapi.co — free tier = 1000/day).
 const GEO_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 /** @type {Map<string, {country: string|null, at: number}>} */
@@ -69,9 +113,13 @@ class Peer {
     this.name = 'Misafir';
     this.gender = 'X';
     this.peerGender = 'any';
+    /** @type {'video' | 'voice'} 1-1 matchmaking mode */
+    this.mode = 'video';
     /** @type {'idle' | 'queued' | 'matched'} */
     this.status = 'idle';
     this.matchId = null;
+    this.roomId = null;
+    this.muted = false;
     this.ip = null;
     this.country = null;
     this.ua = null;
@@ -271,6 +319,7 @@ function compatible(a, b) {
   if (a.id === b.id) return false;
   // Same authenticated user with two sockets — don't match with self.
   if (a.userId && b.userId && a.userId === b.userId) return false;
+  if (a.mode !== b.mode) return false;
   if (a.peerGender !== 'any' && b.gender !== a.peerGender) return false;
   if (b.peerGender !== 'any' && a.gender !== b.peerGender) return false;
   return true;
@@ -280,13 +329,14 @@ function pair(a, b) {
   a.status = 'matched'; b.status = 'matched';
   a.matchId = b.id;     b.matchId = a.id;
   const aPolite = a.id > b.id;
-  a.send({ type: 'matched', peerId: b.id, peerInfo: b.publicInfo(), polite:  aPolite });
-  b.send({ type: 'matched', peerId: a.id, peerInfo: a.publicInfo(), polite: !aPolite });
+  a.send({ type: 'matched', peerId: b.id, peerInfo: b.publicInfo(), polite:  aPolite, mode: a.mode });
+  b.send({ type: 'matched', peerId: a.id, peerInfo: a.publicInfo(), polite: !aPolite, mode: b.mode });
   console.log(`[match] ${a.id.slice(0, 8)}(${a.userId?.slice(0,8) || 'guest'}) <-> ${b.id.slice(0, 8)}(${b.userId?.slice(0,8) || 'guest'})`);
 }
 
 async function enqueue(peer) {
   if (peer.status === 'matched') return;
+  leaveRoom(peer); // matchmaking and rooms are mutually exclusive
 
   // ban gate
   if (await isBanned(peer.userId)) {
@@ -335,6 +385,7 @@ async function handleHello(peer, msg) {
   if (typeof msg.name === 'string')               peer.name = msg.name.slice(0, 40) || 'Misafir';
   if (['M','F','X'].includes(msg.gender))         peer.gender = msg.gender;
   if (['M','F','any'].includes(msg.peerGender))   peer.peerGender = msg.peerGender;
+  if (['video','voice'].includes(msg.mode))       peer.mode = msg.mode;
 
   // Optional in-message token (fallback if connect URL didn't carry one).
   if (typeof msg.token === 'string' && !peer.userId) {
@@ -377,11 +428,165 @@ function handleLeave(peer) {
   removeFromQueue(peer.id);
 }
 
+// ---------------------------------------------------------------------- room handlers
+
+function leaveRoom(peer, { silent = false } = {}) {
+  if (!peer.roomId) return;
+  const room = rooms.get(peer.roomId);
+  peer.roomId = null;
+  peer.muted = false;
+  if (!room) return;
+
+  const ix = room.memberIds.indexOf(peer.id);
+  if (ix >= 0) room.memberIds.splice(ix, 1);
+
+  if (room.memberIds.length === 0) {
+    rooms.delete(room.id);
+    console.log(`[room] ${room.id} closed (empty)`);
+    return;
+  }
+
+  // Owner succession: oldest remaining member takes over.
+  let newOwnerId = null;
+  if (room.ownerId === peer.id) {
+    room.ownerId = room.memberIds[0];
+    newOwnerId = room.ownerId;
+    console.log(`[room] ${room.id} owner -> ${room.ownerId.slice(0, 8)}`);
+  }
+
+  if (!silent) {
+    room.broadcast({ type: 'room_peer_left', peerId: peer.id, newOwnerId });
+  }
+}
+
+async function handleRoomCreate(peer, msg) {
+  if (await isBanned(peer.userId)) {
+    peer.send({ type: 'error', code: 'banned', message: 'Yasaklısın.' });
+    try { peer.ws.close(1008, 'banned'); } catch (_) {}
+    return;
+  }
+  // A peer can be in exactly one context: leave queue/match/old room first.
+  unpair(peer, 'leave');
+  removeFromQueue(peer.id);
+  leaveRoom(peer);
+
+  const title = (typeof msg.title === 'string' ? msg.title.trim() : '').slice(0, ROOM_TITLE_MAX);
+  if (!title) return peer.send({ type: 'error', code: 'room_title', message: 'Oda adı gerekli.' });
+  const topic = (typeof msg.topic === 'string' ? msg.topic.trim() : '').slice(0, 30);
+
+  const room = new Room({ title, topic, ownerId: peer.id });
+  rooms.set(room.id, room);
+  room.memberIds.push(peer.id);
+  peer.roomId = room.id;
+  peer.muted = false; // creator starts live on stage
+
+  console.log(`[room] ${room.id} created "${title}" by ${peer.id.slice(0, 8)}`);
+  peer.send({
+    type: 'room_joined',
+    room: room.summary(),
+    ownerId: room.ownerId,
+    members: room.members().map((m) => room.memberInfo(m)),
+  });
+}
+
+async function handleRoomJoin(peer, msg) {
+  if (await isBanned(peer.userId)) {
+    peer.send({ type: 'error', code: 'banned', message: 'Yasaklısın.' });
+    try { peer.ws.close(1008, 'banned'); } catch (_) {}
+    return;
+  }
+  const room = rooms.get(typeof msg.roomId === 'string' ? msg.roomId : '');
+  if (!room) return peer.send({ type: 'error', code: 'room_gone', message: 'Oda bulunamadı veya kapandı.' });
+  if (room.memberIds.includes(peer.id)) return;
+  if (room.memberIds.length >= ROOM_CAP) {
+    return peer.send({ type: 'error', code: 'room_full', message: 'Oda dolu.' });
+  }
+
+  unpair(peer, 'leave');
+  removeFromQueue(peer.id);
+  leaveRoom(peer);
+
+  peer.roomId = room.id;
+  peer.muted = true; // joiners land muted (listener) — unmute to speak
+
+  // Tell existing members BEFORE adding, so the list they hold stays consistent.
+  room.broadcast({ type: 'room_peer_joined', member: room.memberInfo(peer) });
+  room.memberIds.push(peer.id);
+
+  console.log(`[room] ${room.id} join ${peer.id.slice(0, 8)} (${room.memberIds.length}/${ROOM_CAP})`);
+  peer.send({
+    type: 'room_joined',
+    room: room.summary(),
+    ownerId: room.ownerId,
+    members: room.members().map((m) => room.memberInfo(m)),
+  });
+}
+
+function handleRoomLeave(peer) {
+  leaveRoom(peer);
+}
+
+function handleRoomList(peer) {
+  const list = [...rooms.values()]
+    .sort((a, b) => b.memberIds.length - a.memberIds.length)
+    .slice(0, 50)
+    .map((r) => r.summary());
+  peer.send({ type: 'room_list', rooms: list });
+}
+
+function handleRoomSignal(peer, msg) {
+  if (!peer.roomId) return;
+  const room = rooms.get(peer.roomId);
+  if (!room) return;
+  const target = peers.get(typeof msg.to === 'string' ? msg.to : '');
+  if (!target || target.roomId !== room.id) return;
+  target.send({ type: 'room_signal', from: peer.id, payload: msg.payload });
+}
+
+function handleRoomChat(peer, msg) {
+  if (!peer.roomId) return;
+  const room = rooms.get(peer.roomId);
+  if (!room) return;
+  const text = (typeof msg.text === 'string' ? msg.text.trim() : '').slice(0, ROOM_CHAT_MAX);
+  if (!text) return;
+  room.broadcast({ type: 'room_chat', from: room.memberInfo(peer), text, at: Date.now() });
+}
+
+function handleRoomState(peer, msg) {
+  if (!peer.roomId) return;
+  const room = rooms.get(peer.roomId);
+  if (!room) return;
+  if (typeof msg.muted === 'boolean') peer.muted = msg.muted;
+  room.broadcast({ type: 'room_member_state', peerId: peer.id, muted: peer.muted }, peer.id);
+}
+
+function handleRoomKick(peer, msg) {
+  if (!peer.roomId) return;
+  const room = rooms.get(peer.roomId);
+  if (!room || room.ownerId !== peer.id) return;
+  const target = peers.get(typeof msg.peerId === 'string' ? msg.peerId : '');
+  if (!target || target.roomId !== room.id || target.id === peer.id) return;
+  target.send({ type: 'room_kicked' });
+  leaveRoom(target);
+}
+
+function handleRoomMute(peer, msg) {
+  if (!peer.roomId) return;
+  const room = rooms.get(peer.roomId);
+  if (!room || room.ownerId !== peer.id) return;
+  const target = peers.get(typeof msg.peerId === 'string' ? msg.peerId : '');
+  if (!target || target.roomId !== room.id || target.id === peer.id) return;
+  target.muted = true;
+  target.send({ type: 'room_force_muted' });
+  room.broadcast({ type: 'room_member_state', peerId: target.id, muted: true }, target.id);
+}
+
 function handleDisconnect(peer) {
   unpair(peer, 'disconnect');
   removeFromQueue(peer.id);
+  leaveRoom(peer);
   peers.delete(peer.id);
-  console.log(`[disconnect] ${peer.id.slice(0, 8)} (active=${peers.size}, queue=${queue.length})`);
+  console.log(`[disconnect] ${peer.id.slice(0, 8)} (active=${peers.size}, queue=${queue.length}, rooms=${rooms.size})`);
 }
 
 // ---------------------------------------------------------------------- server
@@ -393,6 +598,7 @@ const httpServer = http.createServer((req, res) => {
       ok: true,
       peers: peers.size,
       queue: queue.length,
+      rooms: rooms.size,
       authMode: supabaseEnabled ? 'supabase' : 'open',
     }));
     return;
@@ -433,10 +639,21 @@ wss.on('connection', async (ws, req) => {
 
     switch (msg.type) {
       case 'hello':   return await handleHello(peer, msg);
-      case 'enqueue': return enqueue(peer);
+      case 'enqueue':
+        if (['video','voice'].includes(msg.mode)) peer.mode = msg.mode;
+        return enqueue(peer);
       case 'signal':  return handleSignal(peer, msg);
       case 'next':    return handleNext(peer);
       case 'leave':   return handleLeave(peer);
+      case 'room_create': return await handleRoomCreate(peer, msg);
+      case 'room_join':   return await handleRoomJoin(peer, msg);
+      case 'room_leave':  return handleRoomLeave(peer);
+      case 'room_list':   return handleRoomList(peer);
+      case 'room_signal': return handleRoomSignal(peer, msg);
+      case 'room_chat':   return handleRoomChat(peer, msg);
+      case 'room_state':  return handleRoomState(peer, msg);
+      case 'room_kick':   return handleRoomKick(peer, msg);
+      case 'room_mute':   return handleRoomMute(peer, msg);
       default:        return peer.send({ type: 'error', message: 'unknown_type' });
     }
   });
@@ -446,8 +663,8 @@ wss.on('connection', async (ws, req) => {
 });
 
 setInterval(() => {
-  if (peers.size > 0 || queue.length > 0) {
-    console.log(`[stats] peers=${peers.size} queue=${queue.length}`);
+  if (peers.size > 0 || queue.length > 0 || rooms.size > 0) {
+    console.log(`[stats] peers=${peers.size} queue=${queue.length} rooms=${rooms.size}`);
   }
 }, 60_000);
 

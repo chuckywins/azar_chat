@@ -582,9 +582,10 @@ class KCTabBar extends StatelessWidget {
   final void Function(String) onTap;
 
   static const _tabs = [
-    ('home',    Icons.explore_outlined,           Icons.explore,        'Keşfet'),
-    ('chats',   Icons.chat_bubble_outline,        Icons.chat_bubble,    'Sohbetler'),
-    ('profile', Icons.person_outline_rounded,     Icons.person_rounded, 'Profil'),
+    ('home',    Icons.explore_outlined,           Icons.explore,           'Keşfet'),
+    ('rooms',   Icons.graphic_eq_rounded,         Icons.graphic_eq_rounded, 'Odalar'),
+    ('chats',   Icons.chat_bubble_outline,        Icons.chat_bubble,       'Sohbetler'),
+    ('profile', Icons.person_outline_rounded,     Icons.person_rounded,    'Profil'),
   ];
 
   @override

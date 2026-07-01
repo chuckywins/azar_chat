@@ -42,14 +42,24 @@ class _KCMatchingState extends State<KCMatching> {
     final genderLabel = {'all': 'Herkes', 'k': 'Kadın', 'e': 'Erkek'}[f.gender]!;
     final countryLabel = f.country == 'all' ? 'Tüm dünya' : f.country;
 
+    final voice = ctx.app.isVoice;
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        // dim self-cam preview if media is initialised
-        ColoredBox(color: const Color(0xFF0E0E13), child: SizedBox.expand(
-          child: RTCVideoView(ctx.app.localRenderer,
-              mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
-        )),
+        // dim self-cam preview if media is initialised (voice: plain backdrop)
+        if (voice)
+          const DecoratedBox(decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(-0.4, -0.6), radius: 1.4,
+              colors: [Color(0xFF232334), Color(0xFF0E0E13)],
+            ),
+          ))
+        else
+          ColoredBox(color: const Color(0xFF0E0E13), child: SizedBox.expand(
+            child: RTCVideoView(ctx.app.localRenderer,
+                mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
+          )),
         Container(color: const Color(0xB008080C)),
 
         Center(
@@ -92,6 +102,7 @@ class _KCMatchingState extends State<KCMatching> {
                 Wrap(
                   spacing: 8, runSpacing: 8, alignment: WrapAlignment.center,
                   children: [
+                    _tag(voice ? '🎙 Sesli' : '🎥 Görüntülü'),
                     _tag(genderLabel),
                     _tag(countryLabel),
                     _tag('Çeviri: ${f.lang}'),
@@ -126,7 +137,9 @@ class _KCMatchingState extends State<KCMatching> {
     switch (ctx.app.phase) {
       case AppPhase.connecting: return 'Sunucu el sıkışıyor';
       case AppPhase.searching:  return 'Sana uygun biri bulunuyor';
-      default:                  return 'Kamera ve mikrofon başlatılıyor';
+      default:                  return ctx.app.isVoice
+          ? 'Mikrofon başlatılıyor'
+          : 'Kamera ve mikrofon başlatılıyor';
     }
   }
 
