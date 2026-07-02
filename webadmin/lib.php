@@ -53,6 +53,42 @@ function sb_count(string $pathQuery): int {
   return 0;
 }
 
+/* ── Sinyal sunucusu admin API (canlı odalar, ayar refresh) ──────────────── */
+
+function signal_api(string $method, string $path, ?array $body = null): array {
+  $base = preg_replace('#/health/?$#', '', SIGNALING_HEALTH_URL);
+  $ch = curl_init($base . $path);
+  curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  => $method,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT        => 10,
+    CURLOPT_HTTPHEADER     => [
+      'X-Admin-Key: ' . SUPABASE_SERVICE_KEY,
+      'Content-Type: application/json',
+    ],
+  ]);
+  if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body));
+  $raw  = curl_exec($ch);
+  $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  curl_close($ch);
+  return ['ok' => $code >= 200 && $code < 300, 'code' => $code,
+          'data' => json_decode($raw ?: 'null', true)];
+}
+
+/* ── Storage (fotoğraflar için imzalı URL) ───────────────────────────────── */
+
+function storage_signed_url(string $bucket, string $path, int $ttl = 600): ?string {
+  $r = sb('POST', '/storage/v1/object/sign/' . $bucket . '/' . str_replace('%2F', '/', rawurlencode($path)),
+          ['expiresIn' => $ttl]);
+  $signed = $r['data']['signedURL'] ?? null;
+  return $signed ? SUPABASE_URL . '/storage/v1' . $signed : null;
+}
+
+function storage_delete(string $bucket, string $path): bool {
+  $r = sb('DELETE', '/storage/v1/object/' . $bucket . '/' . str_replace('%2F', '/', rawurlencode($path)));
+  return $r['ok'];
+}
+
 /* ── Auth (GoTrue password grant + rol kontrolü) ─────────────────────────── */
 
 /** Yerel panel girişi (config.local.php'de ADMIN_PANEL_USER/PASS tanımlıysa). */
@@ -140,8 +176,11 @@ function layout_top(string $title, string $active): void {
   $role = h($_SESSION['role'] ?? '');
   $items = [
     ['index.php',         'dashboard',     '📊', 'Pano'],
+    ['rooms.php',         'rooms',         '🎙', 'Odalar (Canlı)'],
+    ['settings.php',      'settings',      '⚙️', 'Ayarlar'],
     ['users.php',         'users',         '👥', 'Kullanıcılar'],
     ['reports.php',       'reports',       '🚩', 'Şikayetler'],
+    ['photos.php',        'photos',        '🖼', 'Fotoğraflar'],
     ['bans.php',          'bans',          '⛔', 'Yasaklar'],
     ['vip.php',           'vip',           '👑', 'VIP'],
     ['announcements.php', 'announcements', '📣', 'Duyurular'],

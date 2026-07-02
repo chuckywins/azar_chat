@@ -61,28 +61,72 @@ const queue = [];
 const ROOM_CAP = 10;
 const ROOM_TITLE_MAX = 60;
 const ROOM_CHAT_MAX = 400;
-// Room lifetime (VIP-created rooms): 7 min; +3 min per extension, max 30 min ahead.
-// System rooms never expire.
-const ROOM_VIP_MS    = 7 * 60_000;
-const ROOM_EXT_MS    = 3 * 60_000;
-const ROOM_MAX_AHEAD = 30 * 60_000;
+// ── live-tunable settings (app_settings tablosu; webadmin'den yönetilir) ────
+// Defaults below apply when Supabase is absent or a key is missing.
+// refreshSettings() reloads every 60s and on POST /admin/refresh.
+const CFG = {
+  voiceCallMs:       2 * 60_000,   // voice_call_sec
+  voiceExtMs:        150_000,      // voice_ext_sec
+  voiceExtVipMs:     240_000,      // voice_ext_vip_sec
+  roomVipMs:         7 * 60_000,   // room_vip_sec
+  roomExtMs:         3 * 60_000,   // room_ext_sec
+  roomMaxAheadMs:    30 * 60_000,  // room_max_ahead_sec
+  systemRoomMs:      200_000,      // system_room_sec
+  systemRoomMinOpen: 5,            // system_room_min_open
+  systemRoomCapMin:  3,            // system_room_cap_min
+  systemRoomCapMax:  4,            // system_room_cap_max
+  filterCost:        5,            // filter_match_cost
+};
+const SYSTEM_ROOM_MAX = 40; // runaway guard (statik)
 
-// Random 1-1 VOICE matches are time-boxed: 2 min; extensions +2:30 (VIP: +4:00).
-const VOICE_CALL_MS    = 2 * 60_000;
-const VOICE_EXT_MS     = 150_000;
-const VOICE_EXT_VIP_MS = 240_000;
-
-// System-generated rooms: the server keeps a pool of small open rooms alive.
-const SYSTEM_ROOM_MIN_OPEN = 5;    // always at least this many joinable system rooms
-const SYSTEM_ROOM_MAX      = 40;   // runaway guard
-// System room lifetime: 3min 20s — countdown starts when the FIRST member
-// joins (empty pool rooms don't tick); expired rooms close, the pool restocks.
-const SYSTEM_ROOM_MS       = 200_000;
-const SYSTEM_TOPICS = [
+const DEFAULT_TOPICS = [
   ['Tanışalım', 'Tanışma'], ['Şarkını Söyle', 'Müzik'], ['Dertleşelim', 'Dertleşme'],
   ['İtiraf Saati', 'İtiraf'], ['Gece Sohbeti', 'Sohbet'], ['English Time', 'English'],
   ['Oyun & Eğlence', 'Oyun'], ['Müzik Keyfi', 'Müzik'], ['Felsefe Masası', 'Sohbet'],
 ];
+let SYSTEM_TOPICS = [...DEFAULT_TOPICS];
+
+const SETTING_MAP = {
+  voice_call_sec:       ['voiceCallMs', 1000],
+  voice_ext_sec:        ['voiceExtMs', 1000],
+  voice_ext_vip_sec:    ['voiceExtVipMs', 1000],
+  room_vip_sec:         ['roomVipMs', 1000],
+  room_ext_sec:         ['roomExtMs', 1000],
+  room_max_ahead_sec:   ['roomMaxAheadMs', 1000],
+  system_room_sec:      ['systemRoomMs', 1000],
+  system_room_min_open: ['systemRoomMinOpen', 1],
+  system_room_cap_min:  ['systemRoomCapMin', 1],
+  system_room_cap_max:  ['systemRoomCapMax', 1],
+  filter_match_cost:    ['filterCost', 1],
+};
+
+async function refreshSettings() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase.from('app_settings').select('key,value');
+    if (!error && Array.isArray(data)) {
+      for (const row of data) {
+        const m = SETTING_MAP[row.key];
+        if (!m) continue;
+        const n = parseInt(row.value, 10);
+        if (Number.isFinite(n) && n >= 0) CFG[m[0]] = n * m[1];
+      }
+    }
+  } catch (e) { console.warn(`[settings] load failed: ${e.message}`); }
+
+  try {
+    const { data, error } = await supabase
+      .from('system_room_topics')
+      .select('title,topic')
+      .eq('active', true)
+      .order('sort', { ascending: true });
+    if (!error && Array.isArray(data) && data.length > 0) {
+      SYSTEM_TOPICS = data.map((r) => [r.title, r.topic]);
+    } else if (!error) {
+      SYSTEM_TOPICS = [...DEFAULT_TOPICS];
+    }
+  } catch (e) { console.warn(`[settings] topics load failed: ${e.message}`); }
+}
 
 // Region groups for the real country filter.
 const REGIONS = {
@@ -99,15 +143,24 @@ const REGIONS = {
 const rooms = new Map();
 
 class Room {
-  constructor({ title, topic, ownerId, lifetimeMs, system = false, cap = ROOM_CAP }) {
+  constructor({ title, topic, ownerId, lifetimeMs, system = false, manual = false, cap = ROOM_CAP }) {
     this.id = crypto.randomBytes(4).toString('hex');
     this.title = title;
     this.topic = topic;
-    this.ownerId = ownerId;          // peer id of current owner (null for system rooms)
-    this.system = system;            // server-generated room: never expires, no owner
+    this.ownerId = ownerId;          // peer id of current owner (null for system/manual rooms)
+    this.system = system;            // server-generated pool room
+    this.manual = manual;            // admin-created room (panel) — fixed timer, outside pool
     this.cap = cap;
     this.createdAt = Date.now();
-    this.expiresAt = system ? null : Date.now() + (lifetimeMs || ROOM_VIP_MS);
+    // system pool rooms: timer starts on first join; manual: fixed at creation
+    // (lifetimeMs 0/undefined for manual = süresiz); user (VIP) rooms: timed now.
+    if (system && !manual) {
+      this.expiresAt = null;
+    } else if (manual) {
+      this.expiresAt = lifetimeMs ? Date.now() + lifetimeMs : null;
+    } else {
+      this.expiresAt = Date.now() + (lifetimeMs || CFG.roomVipMs);
+    }
     /** @type {string[]} joins in order — first is oldest (owner succession) */
     this.memberIds = [];
   }
@@ -132,8 +185,9 @@ class Room {
     return {
       id: this.id, title: this.title, topic: this.topic,
       count: this.memberIds.length, cap: this.cap,
-      ownerName: this.system ? 'kerochat' : (owner ? owner.name : '—'),
+      ownerName: (this.system || this.manual) ? 'kerochat' : (owner ? owner.name : '—'),
       system: this.system,
+      manual: this.manual,
       expiresAt: this.expiresAt,
       preview,
     };
@@ -449,7 +503,7 @@ function pair(a, b, { timed = false } = {}) {
   // Random voice matches are time-boxed (2 min); friend calls are not.
   let callExpiresAt = null;
   if (timed) {
-    callExpiresAt = Date.now() + VOICE_CALL_MS;
+    callExpiresAt = Date.now() + CFG.voiceCallMs;
     a.callExpiresAt = callExpiresAt;
     b.callExpiresAt = callExpiresAt;
   }
@@ -493,9 +547,9 @@ async function enqueue(peer) {
     } else {
       try {
         const { data } = await supabase.from('profiles').select('coins').eq('id', peer.userId).maybeSingle();
-        if (!data || (data.coins ?? 0) < 5) {
+        if (!data || (data.coins ?? 0) < CFG.filterCost) {
           return peer.send({ type: 'error', code: 'filter_coins',
-            message: 'Filtreli eşleşme için en az 5 elmas gerekli.' });
+            message: `Filtreli eşleşme için en az ${CFG.filterCost} elmas gerekli.` });
         }
       } catch (_) {/* fail open */}
     }
@@ -553,8 +607,8 @@ async function handleCallExtend(peer) {
   const partner = peer.matchId ? peers.get(peer.matchId) : null;
   if (!partner) return;
 
-  const extMs = peer.isVip ? VOICE_EXT_VIP_MS : VOICE_EXT_MS;
-  if (peer.callExpiresAt - Date.now() + extMs > ROOM_MAX_AHEAD) {
+  const extMs = peer.isVip ? CFG.voiceExtVipMs : CFG.voiceExtMs;
+  if (peer.callExpiresAt - Date.now() + extMs > CFG.roomMaxAheadMs) {
     return peer.send({ type: 'error', code: 'call_max', message: 'Görüşme süresi üst sınırda.' });
   }
 
@@ -663,13 +717,14 @@ function leaveRoom(peer, { silent = false } = {}) {
   if (ix >= 0) room.memberIds.splice(ix, 1);
 
   if (room.memberIds.length === 0) {
-    if (!room.system) {
+    if (!room.system && !room.manual) {
       rooms.delete(room.id);
       console.log(`[room] ${room.id} closed (empty)`);
       return;
     }
-    // Empty system room: stop the countdown so the next group gets a full 3:20.
-    room.expiresAt = null;
+    // Empty system pool room: stop the countdown so the next group gets the
+    // full duration. (Manual rooms keep their fixed timer.)
+    if (room.system && !room.manual) room.expiresAt = null;
   }
 
   // Owner succession (VIP rooms only): oldest remaining member takes over.
@@ -688,23 +743,25 @@ function leaveRoom(peer, { silent = false } = {}) {
 
 // ── system room pool: always keep small joinable rooms alive ────────────────
 function ensureSystemRooms() {
-  const systemRooms = [...rooms.values()].filter((r) => r.system);
-  const open = systemRooms.filter((r) => !r.isFull);
+  const poolRooms = [...rooms.values()].filter((r) => r.system && !r.manual);
+  const open = poolRooms.filter((r) => !r.isFull);
 
   // prune surplus EMPTY system rooms (keep the pool tidy)
   const empties = open.filter((r) => r.memberIds.length === 0);
-  let surplus = open.length - SYSTEM_ROOM_MIN_OPEN;
+  let surplus = open.length - CFG.systemRoomMinOpen;
   for (const r of empties) {
     if (surplus <= 0) break;
     rooms.delete(r.id);
     surplus--;
   }
 
-  let openCount = [...rooms.values()].filter((r) => r.system && !r.isFull).length;
-  let total = [...rooms.values()].filter((r) => r.system).length;
-  while (openCount < SYSTEM_ROOM_MIN_OPEN && total < SYSTEM_ROOM_MAX) {
+  let openCount = [...rooms.values()].filter((r) => r.system && !r.manual && !r.isFull).length;
+  let total = [...rooms.values()].filter((r) => r.system && !r.manual).length;
+  while (openCount < CFG.systemRoomMinOpen && total < SYSTEM_ROOM_MAX) {
     const [title, topic] = SYSTEM_TOPICS[Math.floor(Math.random() * SYSTEM_TOPICS.length)];
-    const cap = Math.random() < 0.5 ? 3 : 4;
+    const lo = Math.max(2, CFG.systemRoomCapMin);
+    const hi = Math.max(lo, CFG.systemRoomCapMax);
+    const cap = lo + Math.floor(Math.random() * (hi - lo + 1));
     const room = new Room({ title, topic, ownerId: null, system: true, cap });
     rooms.set(room.id, room);
     openCount++; total++;
@@ -734,7 +791,7 @@ async function handleRoomCreate(peer, msg) {
 
   const room = new Room({
     title, topic, ownerId: peer.id,
-    lifetimeMs: ROOM_VIP_MS,
+    lifetimeMs: CFG.roomVipMs,
   });
   rooms.set(room.id, room);
   room.memberIds.push(peer.id);
@@ -773,9 +830,9 @@ async function handleRoomJoin(peer, msg) {
   // Tell existing members BEFORE adding, so the list they hold stays consistent.
   room.broadcast({ type: 'room_peer_joined', member: room.memberInfo(peer) });
   room.memberIds.push(peer.id);
-  // System room countdown starts with the first occupant.
-  if (room.system && room.memberIds.length === 1) {
-    room.expiresAt = Date.now() + SYSTEM_ROOM_MS;
+  // System pool room countdown starts with the first occupant.
+  if (room.system && !room.manual && room.memberIds.length === 1) {
+    room.expiresAt = Date.now() + CFG.systemRoomMs;
   }
   ensureSystemRooms(); // room may be full now — keep the open pool stocked
 
@@ -852,7 +909,7 @@ async function handleRoomExtend(peer, msg) {
 
   const method = msg.method === 'card' ? 'card' : 'coins';
 
-  if (room.expiresAt - Date.now() + ROOM_EXT_MS > ROOM_MAX_AHEAD) {
+  if (room.expiresAt - Date.now() + CFG.roomExtMs > CFG.roomMaxAheadMs) {
     return peer.send({ type: 'error', code: 'room_max', message: 'Oda süresi üst sınırda (30 dk).' });
   }
 
@@ -876,7 +933,7 @@ async function handleRoomExtend(peer, msg) {
     }
   }
 
-  room.expiresAt += ROOM_EXT_MS;
+  room.expiresAt += CFG.roomExtMs;
   console.log(`[room] ${room.id} extended +3dk by ${peer.id.slice(0, 8)} (${method})`);
   room.broadcast({ type: 'room_extended', expiresAt: room.expiresAt, byName: peer.name, method });
 }
@@ -999,6 +1056,79 @@ function handleDisconnect(peer) {
 
 // ---------------------------------------------------------------------- server
 
+// ── admin HTTP API (webadmin paneli kullanır) ───────────────────────────────
+// Auth: X-Admin-Key başlığı service role anahtarıyla eşleşmeli.
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let buf = '';
+    req.on('data', (c) => { buf += c; if (buf.length > 65536) req.destroy(); });
+    req.on('end', () => { try { resolve(JSON.parse(buf || '{}')); } catch { resolve({}); } });
+  });
+}
+
+function sendJson(res, code, obj) {
+  res.writeHead(code, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(obj));
+}
+
+async function handleAdminHttp(req, res) {
+  if (!supabaseEnabled || req.headers['x-admin-key'] !== SUPABASE_SERVICE_ROLE_KEY) {
+    return sendJson(res, 401, { error: 'unauthorized' });
+  }
+
+  if (req.method === 'GET' && req.url === '/admin/state') {
+    return sendJson(res, 200, {
+      settings: CFG,
+      topics: SYSTEM_TOPICS.map(([title, topic]) => ({ title, topic })),
+      peers: peers.size,
+      queue: queue.length,
+      rooms: [...rooms.values()].map((r) => ({
+        ...r.summary(),
+        members: r.members().map((m) => ({ name: m.name, muted: m.muted })),
+        createdAt: r.createdAt,
+      })),
+    });
+  }
+
+  if (req.method === 'POST' && req.url === '/admin/refresh') {
+    await refreshSettings();
+    return sendJson(res, 200, { ok: true, settings: CFG, topicCount: SYSTEM_TOPICS.length });
+  }
+
+  if (req.method === 'POST' && req.url === '/admin/room') {
+    const b = await readJsonBody(req);
+    const title = (typeof b.title === 'string' ? b.title.trim() : '').slice(0, ROOM_TITLE_MAX);
+    if (!title) return sendJson(res, 400, { error: 'title_required' });
+    const topic = (typeof b.topic === 'string' ? b.topic.trim() : '').slice(0, 30);
+    const cap = Math.min(ROOM_CAP, Math.max(2, parseInt(b.cap, 10) || 4));
+    const lifetimeSec = Math.max(0, parseInt(b.lifetimeSec, 10) || 0);
+    const room = new Room({
+      title, topic, ownerId: null, system: true, manual: true, cap,
+      lifetimeMs: lifetimeSec > 0 ? lifetimeSec * 1000 : 0,
+    });
+    rooms.set(room.id, room);
+    console.log(`[room] manual ${room.id} "${title}" (cap=${cap}, ${lifetimeSec || '∞'}s) via admin`);
+    return sendJson(res, 200, { ok: true, room: room.summary() });
+  }
+
+  if (req.method === 'POST' && req.url === '/admin/room/close') {
+    const b = await readJsonBody(req);
+    const room = rooms.get(typeof b.id === 'string' ? b.id : '');
+    if (!room) return sendJson(res, 404, { error: 'room_not_found' });
+    for (const m of room.members()) {
+      m.send({ type: 'room_expired' });
+      m.roomId = null;
+      m.muted = false;
+    }
+    rooms.delete(room.id);
+    console.log(`[room] ${room.id} closed via admin`);
+    ensureSystemRooms();
+    return sendJson(res, 200, { ok: true });
+  }
+
+  return sendJson(res, 404, { error: 'not_found' });
+}
+
 const httpServer = http.createServer((req, res) => {
   if (req.url === '/health' || req.url === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1009,6 +1139,10 @@ const httpServer = http.createServer((req, res) => {
       rooms: rooms.size,
       authMode: supabaseEnabled ? 'supabase' : 'open',
     }));
+    return;
+  }
+  if (req.url && req.url.startsWith('/admin/')) {
+    handleAdminHttp(req, res).catch(() => sendJson(res, 500, { error: 'internal' }));
     return;
   }
   res.writeHead(404);
@@ -1173,7 +1307,10 @@ if (supabase && fcmSA) {
   console.log('[fcm] disabled (set FIREBASE_SERVICE_ACCOUNT_JSON to enable)');
 }
 
-ensureSystemRooms();
+refreshSettings().finally(() => {
+  ensureSystemRooms();
+});
+setInterval(refreshSettings, 60_000);
 setInterval(ensureSystemRooms, 30_000);
 
 httpServer.listen(PORT, HOST, () => {
