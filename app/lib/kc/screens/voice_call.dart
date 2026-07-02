@@ -123,7 +123,14 @@ class _KCVoiceCallScreenState extends State<KCVoiceCallScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _liked = false);
-      ctx.toast('Beğeni gönderilemedi: $e');
+      final msg = e.toString();
+      if (msg.contains('friend_limit_peer')) {
+        ctx.toast('Karşı tarafın arkadaş listesi dolu (20/20)');
+      } else if (msg.contains('friend_limit')) {
+        ctx.toast('Arkadaş listen dolu (20/20) — VIP yakında 👑');
+      } else {
+        ctx.toast('Beğeni gönderilemedi');
+      }
     }
   }
 

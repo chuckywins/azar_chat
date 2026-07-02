@@ -65,6 +65,7 @@ class RoomMember {
     this.country,
     required this.muted,
     required this.isOwner,
+    this.isAdmin = false,
   });
 
   final String id;       // ephemeral socket id
@@ -74,6 +75,7 @@ class RoomMember {
   final String? country;
   bool muted;
   bool isOwner;
+  final bool isAdmin;    // platform admin — shown with a tag in rooms
 
   static RoomMember fromJson(Map<String, dynamic> j) => RoomMember(
         id: j['id'] as String,
@@ -83,6 +85,7 @@ class RoomMember {
         country: j['country'] as String?,
         muted: j['muted'] == true,
         isOwner: j['isOwner'] == true,
+        isAdmin: j['isAdmin'] == true,
       );
 }
 
@@ -124,6 +127,13 @@ class RoomController extends ChangeNotifier {
   final List<RoomChatMsg> chat = [];
   bool muted = true;
   String? errorMessage;
+
+  /// Room expiry (server-authoritative). UI derives the countdown from this.
+  DateTime? roomExpiresAt;
+
+  /// Unread chat messages while the chat sheet is closed.
+  int unreadChat = 0;
+  bool chatOpen = false;
 
   /// UI feedback hook (toasts) — wired by KCContext.
   void Function(String msg)? onToast;
@@ -234,6 +244,15 @@ class RoomController extends ChangeNotifier {
   void kick(String peerId) => _signaling?.roomKick(peerId);
   void muteMember(String peerId) => _signaling?.roomMute(peerId);
 
+  /// Extend the room by 3 minutes using a time card or 20 diamonds.
+  void extendRoom({required String method}) => _signaling?.roomExtend(method: method);
+
+  void setChatOpen(bool open) {
+    chatOpen = open;
+    if (open) unreadChat = 0;
+    notifyListeners();
+  }
+
   // ── internals ────────────────────────────────────────────────────────────
 
   Future<bool> _ensureMic() async {
@@ -340,16 +359,36 @@ class RoomController extends ChangeNotifier {
       case 'room_chat':
         final from = (msg['from'] as Map?)?.cast<String, dynamic>();
         if (from != null) {
+          final fromMe = from['id'] == selfId;
           chat.add(RoomChatMsg(
             name: (from['name'] as String?) ?? 'Misafir',
             text: (msg['text'] as String?) ?? '',
-            fromMe: from['id'] == selfId,
+            fromMe: fromMe,
             isOwner: from['isOwner'] == true,
             at: DateTime.now(),
           ));
           if (chat.length > 200) chat.removeRange(0, chat.length - 200);
+          if (!chatOpen && !fromMe) unreadChat += 1;
           notifyListeners();
         }
+        break;
+
+      case 'room_extended':
+        final exp = (msg['expiresAt'] as num?)?.toInt();
+        if (exp != null) {
+          roomExpiresAt = DateTime.fromMillisecondsSinceEpoch(exp);
+        }
+        final by = msg['byName'] as String? ?? 'Biri';
+        onToast?.call('⏱ $by odayı 3 dk uzattı!');
+        notifyListeners();
+        break;
+
+      case 'room_expired':
+        onToast?.call('⏰ Oda süresi doldu');
+        await _teardownRoom();
+        phase = RoomPhase.list;
+        refresh();
+        notifyListeners();
         break;
 
       case 'room_force_muted':
@@ -369,7 +408,11 @@ class RoomController extends ChangeNotifier {
       case 'error':
         final code = msg['code'] as String?;
         errorMessage = (msg['message'] as String?) ?? 'Hata';
-        if (code == 'room_full' || code == 'room_gone' || code == 'room_title') {
+        if (code == 'no_time_card' || code == 'insufficient_coins' ||
+            code == 'room_max' || code == 'not_authed' || code == 'extend_failed') {
+          onToast?.call(errorMessage!);
+          notifyListeners();
+        } else if (code == 'room_full' || code == 'room_gone' || code == 'room_title') {
           onToast?.call(errorMessage!);
           if (phase == RoomPhase.joining) {
             phase = RoomPhase.list;
@@ -385,7 +428,12 @@ class RoomController extends ChangeNotifier {
   }
 
   Future<void> _onRoomJoined(Map<String, dynamic> msg) async {
-    room = RoomInfo.fromJson(((msg['room'] as Map?) ?? const {}).cast<String, dynamic>());
+    final roomJson = ((msg['room'] as Map?) ?? const {}).cast<String, dynamic>();
+    room = RoomInfo.fromJson(roomJson);
+    final exp = (roomJson['expiresAt'] as num?)?.toInt();
+    roomExpiresAt = exp == null ? null : DateTime.fromMillisecondsSinceEpoch(exp);
+    unreadChat = 0;
+    chatOpen = false;
     ownerId = msg['ownerId'] as String?;
     members
       ..clear()
@@ -454,6 +502,9 @@ class RoomController extends ChangeNotifier {
     }
     room = null;
     ownerId = null;
+    roomExpiresAt = null;
+    unreadChat = 0;
+    chatOpen = false;
     members.clear();
     chat.clear();
     muted = true;

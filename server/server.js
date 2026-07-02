@@ -61,17 +61,24 @@ const queue = [];
 const ROOM_CAP = 10;
 const ROOM_TITLE_MAX = 60;
 const ROOM_CHAT_MAX = 400;
+// Room lifetime: 3 min base, 7 min if the creator is VIP; +3 min per extension,
+// never further than 30 min from "now".
+const ROOM_BASE_MS   = 3 * 60_000;
+const ROOM_VIP_MS    = 7 * 60_000;
+const ROOM_EXT_MS    = 3 * 60_000;
+const ROOM_MAX_AHEAD = 30 * 60_000;
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
 
 class Room {
-  constructor({ title, topic, ownerId }) {
+  constructor({ title, topic, ownerId, lifetimeMs }) {
     this.id = crypto.randomBytes(4).toString('hex');
     this.title = title;
     this.topic = topic;
     this.ownerId = ownerId;          // peer id of current owner
     this.createdAt = Date.now();
+    this.expiresAt = Date.now() + (lifetimeMs || ROOM_BASE_MS);
     /** @type {string[]} joins in order — first is oldest (owner succession) */
     this.memberIds = [];
   }
@@ -95,6 +102,7 @@ class Room {
       id: this.id, title: this.title, topic: this.topic,
       count: this.memberIds.length, cap: ROOM_CAP,
       ownerName: owner ? owner.name : '—',
+      expiresAt: this.expiresAt,
       preview,
     };
   }
@@ -117,6 +125,9 @@ class Peer {
     this.ws = ws;
     this.userId = null;                      // Supabase auth uid if signed in
     this.name = 'Misafir';
+    this.role = 'user';                      // profiles.role — 'admin' shows a tag
+    this.isVip = false;
+    this.nameLocked = false;                 // true once profile nickname is authoritative
     this.gender = 'X';
     this.peerGender = 'any';
     /** @type {'video' | 'voice'} 1-1 matchmaking mode */
@@ -144,6 +155,7 @@ class Peer {
       id: this.id, userId: this.userId,
       name: this.name, gender: this.gender,
       country: this.country,
+      isAdmin: this.role === 'admin',
     };
   }
 }
@@ -238,6 +250,30 @@ async function geoLookup(ip) {
     console.warn(`[geo] lookup failed for ${ip}: ${e.message}`);
     geoCache.set(ip, { country: null, at: Date.now() });
     return null;
+  }
+}
+
+/// One-shot profile summary for a signed-in peer: role + vip + nickname.
+/// Nickname becomes the authoritative display name (anonymity: server-generated
+/// random handles, no client-chosen real names for signed-in users).
+async function fetchSignalingProfile(peer) {
+  if (!supabase || !peer.userId) return;
+  try {
+    const { data, error } = await supabase.rpc('get_signaling_profile', { p_user_id: peer.userId });
+    if (error) {
+      console.warn(`[profile] fetch failed for ${peer.userId.slice(0,8)}: ${error.message}`);
+      return;
+    }
+    if (data && typeof data === 'object') {
+      if (typeof data.role === 'string') peer.role = data.role;
+      peer.isVip = data.vip === true;
+      if (typeof data.nickname === 'string' && data.nickname.trim()) {
+        peer.name = data.nickname.trim().slice(0, 40);
+        peer.nameLocked = true;
+      }
+    }
+  } catch (e) {
+    console.error(`[profile] EXCEPTION: ${e.message}`);
   }
 }
 
@@ -403,7 +439,7 @@ function removeFromQueue(peerId) {
 // ---------------------------------------------------------------------- handlers
 
 async function handleHello(peer, msg) {
-  if (typeof msg.name === 'string')               peer.name = msg.name.slice(0, 40) || 'Misafir';
+  if (typeof msg.name === 'string' && !peer.nameLocked) peer.name = msg.name.slice(0, 40) || 'Misafir';
   if (['M','F','X'].includes(msg.gender))         peer.gender = msg.gender;
   if (['M','F','any'].includes(msg.peerGender))   peer.peerGender = msg.peerGender;
   if (['video','voice'].includes(msg.mode))       peer.mode = msg.mode;
@@ -412,7 +448,10 @@ async function handleHello(peer, msg) {
   // Optional in-message token (fallback if connect URL didn't carry one).
   if (typeof msg.token === 'string' && !peer.userId) {
     const v = await verifyToken(msg.token);
-    if (v) peer.userId = v.sub;
+    if (v) {
+      peer.userId = v.sub;
+      await fetchSignalingProfile(peer);
+    }
   }
 
   // Client-supplied device fingerprint (already hashed). 64-char hex expected.
@@ -496,7 +535,10 @@ async function handleRoomCreate(peer, msg) {
   if (!title) return peer.send({ type: 'error', code: 'room_title', message: 'Oda adı gerekli.' });
   const topic = (typeof msg.topic === 'string' ? msg.topic.trim() : '').slice(0, 30);
 
-  const room = new Room({ title, topic, ownerId: peer.id });
+  const room = new Room({
+    title, topic, ownerId: peer.id,
+    lifetimeMs: peer.isVip ? ROOM_VIP_MS : ROOM_BASE_MS,
+  });
   rooms.set(room.id, room);
   room.memberIds.push(peer.id);
   peer.roomId = room.id;
@@ -592,6 +634,57 @@ function handleRoomKick(peer, msg) {
   leaveRoom(target);
 }
 
+async function handleRoomExtend(peer, msg) {
+  if (!peer.roomId) return;
+  const room = rooms.get(peer.roomId);
+  if (!room) return;
+
+  const method = msg.method === 'card' ? 'card' : 'coins';
+
+  if (room.expiresAt - Date.now() + ROOM_EXT_MS > ROOM_MAX_AHEAD) {
+    return peer.send({ type: 'error', code: 'room_max', message: 'Oda süresi üst sınırda (30 dk).' });
+  }
+
+  if (supabase) {
+    if (!peer.userId) {
+      return peer.send({ type: 'error', code: 'not_authed', message: 'Süre uzatmak için giriş yapmalısın.' });
+    }
+    const { error } = await supabase.rpc('use_room_extension', {
+      p_user_id: peer.userId, p_method: method,
+    });
+    if (error) {
+      const m = error.message || '';
+      if (m.includes('no_time_card')) {
+        return peer.send({ type: 'error', code: 'no_time_card', message: 'Süre uzatma kartın yok.' });
+      }
+      if (m.includes('insufficient_coins')) {
+        return peer.send({ type: 'error', code: 'insufficient_coins', message: 'Yeterli elmasın yok (20 gerekli).' });
+      }
+      console.error(`[room-extend] RPC error: ${m}`);
+      return peer.send({ type: 'error', code: 'extend_failed', message: 'Süre uzatılamadı.' });
+    }
+  }
+
+  room.expiresAt += ROOM_EXT_MS;
+  console.log(`[room] ${room.id} extended +3dk by ${peer.id.slice(0, 8)} (${method})`);
+  room.broadcast({ type: 'room_extended', expiresAt: room.expiresAt, byName: peer.name, method });
+}
+
+// Sweep expired rooms every 10s.
+setInterval(() => {
+  const now = Date.now();
+  for (const room of [...rooms.values()]) {
+    if (room.expiresAt > now) continue;
+    console.log(`[room] ${room.id} expired`);
+    for (const m of room.members()) {
+      m.send({ type: 'room_expired' });
+      m.roomId = null;
+      m.muted = false;
+    }
+    rooms.delete(room.id);
+  }
+}, 10_000);
+
 function handleRoomMute(peer, msg) {
   if (!peer.roomId) return;
   const room = rooms.get(peer.roomId);
@@ -646,7 +739,10 @@ wss.on('connection', async (ws, req) => {
     const token = url.searchParams.get('token');
     if (token) {
       const v = await verifyToken(token);
-      if (v) peer.userId = v.sub;
+      if (v) {
+        peer.userId = v.sub;
+        await fetchSignalingProfile(peer);
+      }
     }
   } catch (_) {/* ignore */}
 
@@ -677,6 +773,7 @@ wss.on('connection', async (ws, req) => {
       case 'room_state':  return handleRoomState(peer, msg);
       case 'room_kick':   return handleRoomKick(peer, msg);
       case 'room_mute':   return handleRoomMute(peer, msg);
+      case 'room_extend': return await handleRoomExtend(peer, msg);
       default:        return peer.send({ type: 'error', message: 'unknown_type' });
     }
   });

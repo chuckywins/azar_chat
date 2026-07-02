@@ -141,8 +141,8 @@ class _KCProfileState extends State<KCProfile> {
                 ],
                 const SizedBox(height: 18),
                 Row(children: [
-                  Expanded(child: KCButton(label: 'Profili düzenle', variant: KCButtonVariant.ghost,
-                      size: KCButtonSize.md, onTap: () => ctx.toast('Profil düzenleme yakında'))),
+                  Expanded(child: KCButton(label: 'Kullanıcı adı', variant: KCButtonVariant.ghost,
+                      size: KCButtonSize.md, onTap: () => _nicknameSheet(context))),
                   const SizedBox(width: 10),
                   Expanded(child: KCButton(label: 'Coin al', icon: Icons.diamond_outlined,
                       size: KCButtonSize.md, onTap: () => ctx.setScreen('store'))),
@@ -312,6 +312,80 @@ class _KCProfileState extends State<KCProfile> {
         ],
       ),
     );
+  }
+
+  void _nicknameSheet(BuildContext context) {
+    final auth = AuthController.instance;
+    final left = auth.profile?.nicknameChangesLeft ?? 0;
+    final ctl = TextEditingController(text: auth.profile?.nickname ?? '');
+    showKCSheet(context, title: 'Kullanıcı adı', builder: (sCtx) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            left > 0
+                ? 'Adın anonimlik için rastgele oluşturuldu. Toplam 2 değiştirme hakkın var — kalan: $left.'
+                : 'Değiştirme hakkın kalmadı (2/2 kullanıldı).',
+            style: kcManrope(12.5, color: left > 0 ? KC.muted : KC.warning),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: ctl,
+            enabled: left > 0,
+            maxLength: 24,
+            style: kcManrope(15, w: FontWeight.w600),
+            decoration: InputDecoration(
+              hintText: 'Yeni kullanıcı adı (3-24 karakter)',
+              hintStyle: kcManrope(14, color: KC.muted),
+              counterText: '',
+              filled: true, fillColor: KC.surface2,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: KC.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: KC.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: KC.accent),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (left > 0)
+            KCButton(
+              label: 'Kaydet',
+              icon: Icons.check_rounded,
+              onTap: () async {
+                final name = ctl.text.trim();
+                if (name.length < 3) {
+                  KCContext.instance.toast('En az 3 karakter olmalı');
+                  return;
+                }
+                Navigator.pop(sCtx);
+                try {
+                  final remaining = await AuthController.instance.changeNickname(name);
+                  if (!mounted) return;
+                  KCContext.instance.toast('✅ Adın "$name" oldu — kalan hak: $remaining');
+                  setState(() {});
+                } catch (e) {
+                  final msg = e.toString();
+                  KCContext.instance.toast(
+                    msg.contains('nickname_limit')
+                        ? 'Değiştirme hakkın kalmadı (2/2)'
+                        : msg.contains('nickname_invalid')
+                            ? 'Geçersiz ad (3-24 karakter)'
+                            : 'Ad değiştirilemedi',
+                  );
+                }
+              },
+            ),
+        ],
+      );
+    });
   }
 
   Widget _trustBadge(int s) {

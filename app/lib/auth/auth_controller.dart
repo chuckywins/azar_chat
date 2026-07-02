@@ -150,6 +150,17 @@ class AuthController extends ChangeNotifier {
   /// Returns the Supabase access token (JWT) for the current session, or null.
   String? get accessToken => _client?.auth.currentSession?.accessToken;
 
+  /// Change the (random) username — server enforces the 2-change limit.
+  /// Returns remaining rights. Throws on 'nickname_limit' / 'nickname_invalid'.
+  Future<int> changeNickname(String nickname) async {
+    final c = _client;
+    if (c == null) throw Exception('not_configured');
+    final res = await c.rpc('change_nickname', params: {'p_nickname': nickname});
+    await loadProfile();
+    final m = (res as Map).cast<String, dynamic>();
+    return (m['remaining'] as num?)?.toInt() ?? 0;
+  }
+
   String _humanize(Object e) {
     final msg = e.toString();
     if (msg.contains('Invalid login credentials')) {

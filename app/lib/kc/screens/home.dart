@@ -9,6 +9,7 @@ import '../atoms.dart';
 import '../kc_context.dart';
 import '../real_data.dart';
 import '../tokens.dart';
+import 'wheel.dart';
 
 class KCHome extends StatefulWidget {
   const KCHome({super.key});
@@ -79,6 +80,19 @@ class _KCHomeState extends State<KCHome> {
                       Text('İyi akşamlar 👋', style: kcManrope(12.5, w: FontWeight.w600, color: KC.muted)),
                       Text(me.name, style: kcSora(17, w: FontWeight.w700)),
                     ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => showWheelSheet(context),
+                  child: Container(
+                    width: 40, height: 40,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: KC.surface2, shape: BoxShape.circle,
+                      border: Border.all(color: KC.border),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text('🎡', style: TextStyle(fontSize: 18)),
                   ),
                 ),
                 GestureDetector(

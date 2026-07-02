@@ -9,6 +9,7 @@ class Profile {
     required this.isBanned,
     this.bannedUntil,
     this.banReason,
+    this.nicknameChanges = 0,
   });
 
   final String id;
@@ -20,9 +21,11 @@ class Profile {
   final bool isBanned;
   final DateTime? bannedUntil;
   final String? banReason;
+  final int nicknameChanges; // used rights (max 2)
 
   bool get isAdmin => role == 'admin';
   bool get isModerator => role == 'moderator' || role == 'admin';
+  int get nicknameChangesLeft => (2 - nicknameChanges).clamp(0, 2);
 
   factory Profile.fromJson(Map<String, dynamic> j) => Profile(
         id: j['id'] as String,
@@ -34,5 +37,6 @@ class Profile {
         isBanned: (j['is_banned'] as bool?) ?? false,
         bannedUntil: j['banned_until'] == null ? null : DateTime.tryParse(j['banned_until'] as String),
         banReason: j['ban_reason'] as String?,
+        nicknameChanges: (j['nickname_changes'] as num?)?.toInt() ?? 0,
       );
 }

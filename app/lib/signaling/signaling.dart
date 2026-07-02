@@ -94,6 +94,9 @@ class Signaling {
 
   void roomMute(String peerId) => _send({'type': 'room_mute', 'peerId': peerId});
 
+  void roomExtend({required String method}) =>
+      _send({'type': 'room_extend', 'method': method});
+
   Future<void> dispose() async {
     await _sub?.cancel();
     await _channel?.sink.close(ws_status.normalClosure);
