@@ -57,6 +57,12 @@ class AppController extends ChangeNotifier {
   String mode = 'video';
   bool get isVoice => mode == 'voice';
 
+  /// Voice-mode topic preference ('random' = anyone).
+  String topic = 'random';
+
+  /// Topic of the current match, as decided by the server (null = none).
+  String? matchTopic;
+
   String? selfId;
   String? peerId;
   String? peerName;
@@ -96,9 +102,10 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> start({String mode = 'video'}) async {
+  Future<void> start({String mode = 'video', String topic = 'random'}) async {
     if (phase == AppPhase.connecting || phase == AppPhase.searching || phase == AppPhase.inCall) return;
     this.mode = mode;
+    this.topic = topic;
     _setPhase(AppPhase.connecting);
     try {
       final stream = await _media.start(cam: mode == 'video');
@@ -113,8 +120,8 @@ class AppController extends ChangeNotifier {
 
       final deviceFp = await DeviceFingerprint.get();
       _signaling!.hello(name: displayName, gender: gender, peerGender: peerGender,
-          deviceFp: deviceFp, mode: mode);
-      _signaling!.enqueue(mode: mode);
+          deviceFp: deviceFp, mode: mode, topic: topic);
+      _signaling!.enqueue(mode: mode, topic: topic);
     } catch (e) {
       errorMessage = e.toString();
       _setPhase(AppPhase.error);
@@ -199,6 +206,7 @@ class AppController extends ChangeNotifier {
     peerCountry = info?['country'] as String?;
     peerGenderInfo = info?['gender'] as String?;
     _peerUserId = info?['userId'] as String?;
+    matchTopic = msg['topic'] as String?;
     matchedAt = DateTime.now();
 
     final localStream = _media.stream;
@@ -308,6 +316,7 @@ class AppController extends ChangeNotifier {
     peerCountry = null;
     peerGenderInfo = null;
     _peerUserId = null;
+    matchTopic = null;
     remoteRenderer.srcObject = null;
     // Any in-flight game belongs to the prior match — reset it.
     GameController.instance.resetAll();

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
@@ -17,19 +19,31 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
   final _rc = KCContext.instance.roomsCtl;
   final _chatCtl = TextEditingController();
   final _chatScroll = ScrollController();
+  int _secs = 0;
+  Timer? _sec;
 
   @override
   void initState() {
     super.initState();
     _rc.addListener(_onChange);
+    _sec = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _secs += 1);
+    });
   }
 
   @override
   void dispose() {
     _rc.removeListener(_onChange);
+    _sec?.cancel();
     _chatCtl.dispose();
     _chatScroll.dispose();
     super.dispose();
+  }
+
+  String get _mmss {
+    final m = (_secs ~/ 60).toString().padLeft(2, '0');
+    final s = (_secs % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   void _onChange() {
@@ -91,12 +105,15 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
                           const SizedBox(height: 2),
                           Row(children: [
                             if (room.topic.isNotEmpty) ...[
-                              Text(room.topic,
+                              Text('# ${room.topic}',
                                   style: kcManrope(11.5, w: FontWeight.w700, color: KC.accent)),
                               Text('  ·  ', style: kcManrope(11.5, color: KC.muted)),
                             ],
                             Text('${_rc.members.length} kişi',
                                 style: kcManrope(11.5, w: FontWeight.w600, color: KC.muted)),
+                            Text('  ·  ', style: kcManrope(11.5, color: KC.muted)),
+                            Text(_mmss,
+                                style: kcManrope(11.5, w: FontWeight.w700, color: KC.online)),
                           ]),
                         ],
                       ),
@@ -119,14 +136,14 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
                 ),
               ),
 
-              // ── member grid
+              // ── member grid — big BlindID-style cards, 2 per row
               Expanded(
                 flex: 5,
                 child: GridView.builder(
                   padding: const EdgeInsets.fromLTRB(18, 10, 18, 6),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3, crossAxisSpacing: 10, mainAxisSpacing: 10,
-                    childAspectRatio: 0.82,
+                    crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12,
+                    childAspectRatio: 0.92,
                   ),
                   itemCount: _rc.members.length,
                   itemBuilder: (_, i) => _memberTile(_rc.members[i]),
@@ -247,63 +264,89 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
     final isSelf = m.id == _rc.selfId;
     final user = kcUserFromConversationRow(
       peerId: m.userId ?? m.id,
-      nickname: isSelf ? '${m.name} (sen)' : m.name,
+      nickname: m.name,
       gender: m.gender,
       country: m.country,
     );
     final speaking = !m.muted;
+    final canManage = _rc.isOwner && !isSelf;
 
-    return GestureDetector(
-      onTap: (_rc.isOwner && !isSelf) ? () => _memberSheet(m) : null,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: KC.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: speaking ? KC.online.withValues(alpha: 0.65) : KC.border,
-            width: speaking ? 1.6 : 1,
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: speaking ? KC.online : Colors.white.withValues(alpha: 0.1),
+          width: speaking ? 2.2 : 1,
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
+        boxShadow: speaking
+            ? [BoxShadow(color: KC.online.withValues(alpha: 0.35), blurRadius: 18)]
+            : null,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          KCVideoFeed(user: user),
+
+          // bottom scrim for the name row
+          const DecoratedBox(decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [Color(0x00000000), Color(0x00000000), Color(0x99000000)],
+              stops: [0, 0.62, 1],
+            ),
+          )),
+
+          // name + role pill
+          Positioned(
+            left: 8, right: 8, bottom: 8,
+            child: Row(
               children: [
-                KCAvatar(user: user, size: 54, ring: speaking),
-                Positioned(
-                  right: -3, bottom: -3,
-                  child: Container(
-                    width: 20, height: 20,
-                    decoration: BoxDecoration(
-                      color: m.muted ? KC.surface2 : KC.online,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: KC.bg, width: 2),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      m.muted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                      size: 10, color: m.muted ? KC.muted : Colors.white,
-                    ),
+                Container(
+                  width: 22, height: 22,
+                  decoration: BoxDecoration(
+                    color: m.muted ? Colors.black.withValues(alpha: 0.5) : KC.online,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    m.muted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                    size: 12, color: Colors.white,
                   ),
                 ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    isSelf ? '${m.name} (Sen)' : m.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: kcSora(12, w: FontWeight.w700, color: Colors.white),
+                  ),
+                ),
+                if (m.isOwner) const Text('👑', style: TextStyle(fontSize: 13)),
               ],
             ),
-            const SizedBox(height: 7),
-            Text(
-              user.name,
-              maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-              style: kcManrope(11.5, w: FontWeight.w700),
+          ),
+
+          // owner "..." menu
+          if (canManage)
+            Positioned(
+              top: 8, right: 8,
+              child: GestureDetector(
+                onTap: () => _memberSheet(m),
+                child: Container(
+                  width: 30, height: 30,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.more_horiz_rounded, color: Colors.white, size: 17),
+                ),
+              ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              m.isOwner ? '👑 Kurucu' : (m.muted ? 'Dinleyici' : 'Konuşuyor'),
-              style: kcManrope(10, w: FontWeight.w600,
-                  color: m.isOwner ? KC.warning : (m.muted ? KC.muted : KC.online)),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }

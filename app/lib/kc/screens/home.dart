@@ -225,7 +225,7 @@ class _KCHomeState extends State<KCHome> {
                         label: 'Sesli',
                         icon: Icons.mic_rounded,
                         variant: KCButtonVariant.glass,
-                        onTap: () => ctx.startMatch(mode: 'voice'),
+                        onTap: () => _voiceTopicSheet(context),
                       ),
                     ),
                   ],
@@ -251,6 +251,63 @@ class _KCHomeState extends State<KCHome> {
       child: Icon(icon, color: Colors.white, size: 20),
     ),
   );
+
+  static const _voiceTopics = <(String, String, String)>[
+    ('random',    'Rastgele',  '🎲'),
+    ('Tanışalım', 'Tanışalım', '👋'),
+    ('Dertleş',   'Dertleş',   '💭'),
+    ('İtiraf',    'İtiraf Et', '🤫'),
+    ('Müzik',     'Müzik',     '🎵'),
+    ('English',   'English',   '🇬🇧'),
+  ];
+
+  void _voiceTopicSheet(BuildContext context) {
+    final ctx = KCContext.instance;
+    showKCSheet(context, title: 'Ne konuşmak istersin? 🎙', builder: (sCtx) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Aynı konuyu seçen biriyle anonim sesli eşleşirsin.',
+              textAlign: TextAlign.center,
+              style: kcManrope(12.5, color: KC.muted)),
+          const SizedBox(height: 14),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _voiceTopics.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 2.6,
+            ),
+            itemBuilder: (_, i) {
+              final t = _voiceTopics[i];
+              return GestureDetector(
+                onTap: () {
+                  Navigator.pop(sCtx);
+                  ctx.startMatch(mode: 'voice', topic: t.$1);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: KC.surface2,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: KC.border),
+                  ),
+                  child: Row(children: [
+                    Text(t.$3, style: const TextStyle(fontSize: 22)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(t.$2, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: kcSora(14, w: FontWeight.w700)),
+                    ),
+                  ]),
+                ),
+              );
+            },
+          ),
+        ],
+      );
+    });
+  }
 
   void _genderSheet(BuildContext context) {
     final ctx = KCContext.instance;

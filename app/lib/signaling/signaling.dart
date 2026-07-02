@@ -58,12 +58,13 @@ class Signaling {
     _channel!.sink.add(jsonEncode(msg));
   }
 
-  void hello({String? name, String? gender, String? peerGender, String? deviceFp, String? mode}) =>
+  void hello({String? name, String? gender, String? peerGender, String? deviceFp, String? mode, String? topic}) =>
       _send({'type': 'hello',
         'name': ?name, 'gender': ?gender, 'peerGender': ?peerGender,
-        'deviceFp': ?deviceFp, 'mode': ?mode});
+        'deviceFp': ?deviceFp, 'mode': ?mode, 'topic': ?topic});
 
-  void enqueue({String? mode}) => _send({'type': 'enqueue', 'mode': ?mode});
+  void enqueue({String? mode, String? topic}) =>
+      _send({'type': 'enqueue', 'mode': ?mode, 'topic': ?topic});
 
   void signal(String to, Map<String, dynamic> payload) =>
       _send({'type': 'signal', 'to': to, 'payload': payload});

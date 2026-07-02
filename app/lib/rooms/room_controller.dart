@@ -10,6 +10,13 @@ import '../signaling/signaling.dart';
 import '../webrtc/media.dart';
 import '../webrtc/peer.dart';
 
+class RoomPreviewMember {
+  RoomPreviewMember({required this.id, this.userId, required this.name});
+  final String id;
+  final String? userId;
+  final String name;
+}
+
 class RoomInfo {
   RoomInfo({
     required this.id,
@@ -18,6 +25,7 @@ class RoomInfo {
     required this.count,
     required this.cap,
     required this.ownerName,
+    this.preview = const [],
   });
 
   final String id;
@@ -27,6 +35,9 @@ class RoomInfo {
   final int cap;
   final String ownerName;
 
+  /// First few members — powers the swipe-deck slot preview.
+  final List<RoomPreviewMember> preview;
+
   static RoomInfo fromJson(Map<String, dynamic> j) => RoomInfo(
         id: j['id'] as String,
         title: (j['title'] as String?) ?? 'Oda',
@@ -34,6 +45,14 @@ class RoomInfo {
         count: (j['count'] as num?)?.toInt() ?? 0,
         cap: (j['cap'] as num?)?.toInt() ?? 10,
         ownerName: (j['ownerName'] as String?) ?? '—',
+        preview: ((j['preview'] as List?) ?? const [])
+            .cast<Map>()
+            .map((e) => RoomPreviewMember(
+                  id: (e['id'] as String?) ?? '',
+                  userId: e['userId'] as String?,
+                  name: (e['name'] as String?) ?? 'Misafir',
+                ))
+            .toList(),
       );
 }
 

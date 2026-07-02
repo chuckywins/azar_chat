@@ -5,11 +5,11 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../../games/game_controller.dart';
 import '../../games/widgets/games_panel.dart';
-import '../../services/block_service.dart';
 import '../../services/friends_service.dart';
 import '../../services/gift_service.dart';
 import '../anim.dart';
 import '../atoms.dart';
+import '../call_sheets.dart';
 import '../kc_context.dart';
 import '../mock_data.dart';
 import '../tokens.dart';
@@ -138,54 +138,18 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
   Widget build(BuildContext context) {
     final ctx = KCContext.instance;
     final p = ctx.partner ?? kcUsers.first;
-    final voice = ctx.app.isVoice;
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        // remote feed (real) — voice mode: decorative gradient, audio via hidden view
-        if (voice) ...[
-          KCVideoFeed(user: p),
-          // 1×1 hidden video view keeps the remote audio element alive on web.
-          Positioned(
-            left: 0, top: 0, width: 1, height: 1,
-            child: RTCVideoView(ctx.app.remoteRenderer),
+        // remote feed (real)
+        Container(
+          color: Colors.black,
+          child: RTCVideoView(
+            ctx.app.remoteRenderer,
+            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
           ),
-          Center(
-            child: SizedBox(
-              width: 260, height: 260,
-              child: Stack(
-                fit: StackFit.expand,
-                alignment: Alignment.center,
-                children: [
-                  KCPulseRing(color: Colors.white.withValues(alpha: 0.8), delay: Duration.zero),
-                  const KCPulseRing(color: Colors.white70, delay: Duration(milliseconds: 900)),
-                  Center(
-                    child: Container(
-                      width: 130, height: 130,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 3),
-                        boxShadow: [BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.35),
-                          blurRadius: 40, spreadRadius: 2)],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: KCAvatar(user: p, size: 130),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ] else
-          Container(
-            color: Colors.black,
-            child: RTCVideoView(
-              ctx.app.remoteRenderer,
-              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-            ),
-          ),
+        ),
         // dim overlay for readability
         Container(
           decoration: const BoxDecoration(
@@ -240,7 +204,7 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: () => _showModerationSheet(context),
+                onTap: () => showCallModerationSheet(context),
                 child: Container(
                   width: 40, height: 40,
                   decoration: BoxDecoration(
@@ -256,26 +220,25 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
           ),
         ),
 
-        // self PiP (real) — hidden in voice mode
-        if (!voice)
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 70, right: 14,
-            child: Container(
-              width: 96, height: 130,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 2),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 10))],
-                color: Colors.black,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: RTCVideoView(
-                ctx.app.localRenderer,
-                mirror: true,
-                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-              ),
+        // self PiP (real)
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 70, right: 14,
+          child: Container(
+            width: 96, height: 130,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 2),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 10))],
+              color: Colors.black,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: RTCVideoView(
+              ctx.app.localRenderer,
+              mirror: true,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
             ),
           ),
+        ),
 
         // gift rain (sender side — local feedback)
         if (_giftFxKey != null && _giftFxGlyph != null)
@@ -332,15 +295,14 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
                       KCIconBtn(icon: ctx.app.micOn ? Icons.mic_rounded : Icons.mic_off,
                         active: !ctx.app.micOn, size: 52, label: 'Mikrofon',
                         onTap: () { ctx.app.toggleMic(); setState(() {}); }),
-                      if (!voice)
-                        KCIconBtn(icon: Icons.cameraswitch_rounded, size: 52, label: 'Kamera',
-                          onTap: () => ctx.app.switchCamera()),
+                      KCIconBtn(icon: Icons.cameraswitch_rounded, size: 52, label: 'Kamera',
+                        onTap: () => ctx.app.switchCamera()),
                       KCIconBtn(icon: _liked ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
                         active: _liked, size: 52, label: 'Beğen', onTap: _like),
                       KCIconBtn(icon: Icons.videogame_asset_rounded, size: 52, label: 'Oyun',
                         onTap: () => setState(() => _gamesOpen = true)),
                       KCIconBtn(icon: Icons.card_giftcard_rounded, accent: true, size: 52, label: 'Hediye',
-                        onTap: () => _showGiftSheet()),
+                        onTap: () => showCallGiftSheet(context, gifts: _gifts, onPick: _sendGift)),
                       KCIconBtn(icon: Icons.chat_bubble_outline_rounded, size: 52, label: 'Mesaj',
                         onTap: () {
                           if (ctx.app.peerUserId == null) {
@@ -370,117 +332,6 @@ class _KCVideoChatScreenState extends State<KCVideoChatScreen> {
     );
   }
 
-  void _showModerationSheet(BuildContext c) {
-    final ctx = KCContext.instance;
-    final peerUid = ctx.app.peerUserId;
-    showKCSheet(c, title: 'Bu kullanıcı için', builder: (sCtx) {
-      return Column(mainAxisSize: MainAxisSize.min, children: [
-        _modOption(sCtx, Icons.flag_rounded, KC.warning, 'Şikayet et',
-          'Moderasyon ekibi inceler', () {
-            Navigator.pop(sCtx);
-            ctx.toast('Şikayet alındı, teşekkürler');
-          }),
-        const SizedBox(height: 8),
-        _modOption(sCtx, Icons.block_rounded, KC.danger, 'Engelle',
-          'Bir daha eşleşmezsiniz', () async {
-            if (peerUid == null) { Navigator.pop(sCtx); ctx.toast('Misafir kullanıcılar engellenemez'); return; }
-            Navigator.pop(sCtx);
-            try {
-              await BlockService.instance.block(peerUid, reason: 'in-call manual block');
-              ctx.toast('🚫 Kullanıcı engellendi');
-              ctx.nextPartner();
-            } catch (e) {
-              ctx.toast('Hata: $e');
-            }
-          }),
-      ]);
-    });
-  }
-
-  Widget _modOption(BuildContext c, IconData icon, Color color, String title, String subtitle, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
-        child: Row(children: [
-          Container(width: 38, height: 38,
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(12)),
-            alignment: Alignment.center,
-            child: Icon(icon, color: color, size: 18)),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: kcSora(14.5, w: FontWeight.w700)),
-            const SizedBox(height: 2),
-            Text(subtitle, style: kcManrope(12, color: KC.muted)),
-          ])),
-        ]),
-      ),
-    );
-  }
-
-  void _showGiftSheet() {
-    final ctx = KCContext.instance;
-    showKCSheet(context, title: 'Hediye gönder', builder: (sCtx) {
-      if (_gifts.isEmpty) {
-        return const Center(child: Padding(padding: EdgeInsets.all(24),
-          child: CircularProgressIndicator(color: KC.accent, strokeWidth: 2.4)));
-      }
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _gifts.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3, crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 0.86,
-            ),
-            itemBuilder: (_, i) {
-              final g = _gifts[i];
-              return GestureDetector(
-                onTap: () => _sendGift(g),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: KC.surface2,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: KC.border),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(6, 14, 6, 10),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(g.glyph, style: const TextStyle(fontSize: 34)),
-                      const SizedBox(height: 6),
-                      Text(g.name, style: kcManrope(12, w: FontWeight.w600)),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                        decoration: BoxDecoration(color: KC.bg, borderRadius: BorderRadius.circular(999)),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const KCDiamond(size: 12),
-                          const SizedBox(width: 4),
-                          Text('${g.cost}', style: kcSora(12, w: FontWeight.w700)),
-                        ]),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-          // suppress unused-warning
-          const SizedBox.shrink(child: Text('', style: TextStyle())),
-          ...[ctx].map((_) => const SizedBox.shrink()),
-        ],
-      );
-    });
-  }
 }
 
 class _MatchIntroOverlay extends StatefulWidget {

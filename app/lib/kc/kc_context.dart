@@ -100,10 +100,11 @@ class KCContext extends ChangeNotifier {
       return;
     }
     if (hasActiveCall) {
-      activeScreen = 'video';
+      final callScreen = app.isVoice ? 'voice-call' : 'video';
+      activeScreen = callScreen;
       _screenStack
         ..clear()
-        ..addAll(['video']);
+        ..addAll([callScreen]);
       notifyListeners();
       return;
     }
@@ -137,7 +138,7 @@ class KCContext extends ChangeNotifier {
 
   // ── Real WebRTC bridge ────────────────────────────────────────────────────
 
-  Future<void> startMatch({String mode = 'video'}) async {
+  Future<void> startMatch({String mode = 'video', String topic = 'random'}) async {
     if (!_appBooted) {
       await app.bootstrap();
       _appBooted = true;
@@ -147,7 +148,7 @@ class KCContext extends ChangeNotifier {
     final me = kcCurrentUser();
     app.setProfile(name: me.name);
     setScreen('matching');
-    await app.start(mode: mode);
+    await app.start(mode: mode, topic: topic);
   }
 
   Future<void> nextPartner() async {
@@ -251,7 +252,8 @@ class KCContext extends ChangeNotifier {
         }
         // Start subscribing to incoming gifts for the local user.
         _subscribeIncomingGifts();
-        if (activeScreen != 'video') setScreen('video');
+        final callScreen = app.isVoice ? 'voice-call' : 'video';
+        if (activeScreen != callScreen) setScreen(callScreen);
         break;
       case AppPhase.ended:
         toast('Karşı taraf çıktı');

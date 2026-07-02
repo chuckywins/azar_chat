@@ -15,6 +15,7 @@ import 'screens/rooms.dart';
 import 'screens/store.dart';
 import 'screens/thread.dart';
 import 'screens/video_chat.dart';
+import 'screens/voice_call.dart';
 import 'tokens.dart';
 
 ThemeData buildKCTheme() {
@@ -71,6 +72,7 @@ class _KCAppState extends State<KCApp> {
       case 'home':       body = const KCHome(); break;
       case 'matching':   body = const KCMatching(); break;
       case 'video':      body = const KCVideoChatScreen(); break;
+      case 'voice-call': body = const KCVoiceCallScreen(); break;
       case 'rooms':      body = const KCRoomsScreen(); break;
       case 'room':       body = const KCRoomScreen(); break;
       case 'profile':    body = const KCProfile(); break;

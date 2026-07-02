@@ -103,9 +103,10 @@ class _KCMatchingState extends State<KCMatching> {
                   spacing: 8, runSpacing: 8, alignment: WrapAlignment.center,
                   children: [
                     _tag(voice ? '🎙 Sesli' : '🎥 Görüntülü'),
+                    if (voice && ctx.app.topic != 'random') _tag('# ${ctx.app.topic}'),
                     _tag(genderLabel),
                     _tag(countryLabel),
-                    _tag('Çeviri: ${f.lang}'),
+                    if (!voice) _tag('Çeviri: ${f.lang}'),
                   ],
                 ),
               ],

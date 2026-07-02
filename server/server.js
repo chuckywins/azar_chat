@@ -86,10 +86,16 @@ class Room {
 
   summary() {
     const owner = peers.get(this.ownerId);
+    // First 4 members power the swipe-deck slot preview on the client.
+    const preview = this.memberIds.slice(0, 4)
+      .map((id) => peers.get(id))
+      .filter(Boolean)
+      .map((p) => ({ id: p.id, userId: p.userId, name: p.name }));
     return {
       id: this.id, title: this.title, topic: this.topic,
       count: this.memberIds.length, cap: ROOM_CAP,
       ownerName: owner ? owner.name : '—',
+      preview,
     };
   }
 
@@ -115,6 +121,8 @@ class Peer {
     this.peerGender = 'any';
     /** @type {'video' | 'voice'} 1-1 matchmaking mode */
     this.mode = 'video';
+    /** Voice-mode topic ('random' matches anything, BlindID-style). */
+    this.topic = 'random';
     /** @type {'idle' | 'queued' | 'matched'} */
     this.status = 'idle';
     this.matchId = null;
@@ -320,17 +328,30 @@ function compatible(a, b) {
   // Same authenticated user with two sockets — don't match with self.
   if (a.userId && b.userId && a.userId === b.userId) return false;
   if (a.mode !== b.mode) return false;
+  // Voice: topic gate — 'random' pairs with anyone, otherwise topics must match.
+  if (a.mode === 'voice' && a.topic !== 'random' && b.topic !== 'random' && a.topic !== b.topic) {
+    return false;
+  }
   if (a.peerGender !== 'any' && b.gender !== a.peerGender) return false;
   if (b.peerGender !== 'any' && a.gender !== b.peerGender) return false;
   return true;
+}
+
+/** Topic shown to both sides of a voice match: the specific one wins over 'random'. */
+function matchTopic(a, b) {
+  if (a.mode !== 'voice') return null;
+  if (a.topic !== 'random') return a.topic;
+  if (b.topic !== 'random') return b.topic;
+  return null;
 }
 
 function pair(a, b) {
   a.status = 'matched'; b.status = 'matched';
   a.matchId = b.id;     b.matchId = a.id;
   const aPolite = a.id > b.id;
-  a.send({ type: 'matched', peerId: b.id, peerInfo: b.publicInfo(), polite:  aPolite, mode: a.mode });
-  b.send({ type: 'matched', peerId: a.id, peerInfo: a.publicInfo(), polite: !aPolite, mode: b.mode });
+  const topic = matchTopic(a, b);
+  a.send({ type: 'matched', peerId: b.id, peerInfo: b.publicInfo(), polite:  aPolite, mode: a.mode, topic });
+  b.send({ type: 'matched', peerId: a.id, peerInfo: a.publicInfo(), polite: !aPolite, mode: b.mode, topic });
   console.log(`[match] ${a.id.slice(0, 8)}(${a.userId?.slice(0,8) || 'guest'}) <-> ${b.id.slice(0, 8)}(${b.userId?.slice(0,8) || 'guest'})`);
 }
 
@@ -386,6 +407,7 @@ async function handleHello(peer, msg) {
   if (['M','F','X'].includes(msg.gender))         peer.gender = msg.gender;
   if (['M','F','any'].includes(msg.peerGender))   peer.peerGender = msg.peerGender;
   if (['video','voice'].includes(msg.mode))       peer.mode = msg.mode;
+  if (typeof msg.topic === 'string' && msg.topic.trim()) peer.topic = msg.topic.trim().slice(0, 30);
 
   // Optional in-message token (fallback if connect URL didn't carry one).
   if (typeof msg.token === 'string' && !peer.userId) {
@@ -641,6 +663,7 @@ wss.on('connection', async (ws, req) => {
       case 'hello':   return await handleHello(peer, msg);
       case 'enqueue':
         if (['video','voice'].includes(msg.mode)) peer.mode = msg.mode;
+        if (typeof msg.topic === 'string' && msg.topic.trim()) peer.topic = msg.topic.trim().slice(0, 30);
         return enqueue(peer);
       case 'signal':  return handleSignal(peer, msg);
       case 'next':    return handleNext(peer);
