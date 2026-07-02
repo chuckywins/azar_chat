@@ -10,6 +10,7 @@ class Profile {
     this.bannedUntil,
     this.banReason,
     this.nicknameChanges = 0,
+    this.adultConfirmedAt,
   });
 
   final String id;
@@ -22,7 +23,9 @@ class Profile {
   final DateTime? bannedUntil;
   final String? banReason;
   final int nicknameChanges; // used rights (max 2)
+  final DateTime? adultConfirmedAt; // 18+ onayı (store politikaları)
 
+  bool get isAdult => adultConfirmedAt != null;
   bool get isAdmin => role == 'admin';
   bool get isModerator => role == 'moderator' || role == 'admin';
   int get nicknameChangesLeft => (2 - nicknameChanges).clamp(0, 2);
@@ -38,5 +41,8 @@ class Profile {
         bannedUntil: j['banned_until'] == null ? null : DateTime.tryParse(j['banned_until'] as String),
         banReason: j['ban_reason'] as String?,
         nicknameChanges: (j['nickname_changes'] as num?)?.toInt() ?? 0,
+        adultConfirmedAt: j['adult_confirmed_at'] == null
+            ? null
+            : DateTime.tryParse(j['adult_confirmed_at'] as String),
       );
 }

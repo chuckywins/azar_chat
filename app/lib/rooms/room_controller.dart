@@ -68,6 +68,7 @@ class RoomMember {
     required this.muted,
     required this.isOwner,
     this.isAdmin = false,
+    this.isVip = false,
     this.avatarUrl,
   });
 
@@ -79,6 +80,7 @@ class RoomMember {
   bool muted;
   bool isOwner;
   final bool isAdmin;    // platform admin — shown with a tag in rooms
+  final bool isVip;      // VIP member — crown highlight
   final String? avatarUrl;
 
   static RoomMember fromJson(Map<String, dynamic> j) => RoomMember(
@@ -90,6 +92,7 @@ class RoomMember {
         muted: j['muted'] == true,
         isOwner: j['isOwner'] == true,
         isAdmin: j['isAdmin'] == true,
+        isVip: j['isVip'] == true,
         avatarUrl: j['avatarUrl'] as String?,
       );
 }
@@ -246,8 +249,10 @@ class RoomController extends ChangeNotifier {
     // only if the server excluded us; it broadcasts to all, so skip local add.
   }
 
-  void kick(String peerId) => _signaling?.roomKick(peerId);
   void muteMember(String peerId) => _signaling?.roomMute(peerId);
+
+  /// Public "like" — broadcast to the whole room (no friendship implied).
+  void likeMember(String peerId) => _signaling?.roomLike(peerId);
 
   /// Extend the room by 3 minutes using a time card or 20 diamonds.
   void extendRoom({required String method}) => _signaling?.roomExtend(method: method);
@@ -396,6 +401,16 @@ class RoomController extends ChangeNotifier {
         notifyListeners();
         break;
 
+      case 'room_like':
+        final fromName = (msg['fromName'] as String?) ?? 'Biri';
+        final targetName = (msg['targetName'] as String?) ?? 'birini';
+        final mine = msg['fromId'] == selfId;
+        onToast?.call(mine
+            ? '❤️ $targetName kullanıcısını beğendin — herkes gördü!'
+            : '❤️ $fromName, $targetName kullanıcısını beğendi');
+        notifyListeners();
+        break;
+
       case 'room_force_muted':
         _setSelfMuted(true);
         onToast?.call('Yönetici seni susturdu');
@@ -417,7 +432,8 @@ class RoomController extends ChangeNotifier {
             code == 'room_max' || code == 'not_authed' || code == 'extend_failed') {
           onToast?.call(errorMessage!);
           notifyListeners();
-        } else if (code == 'room_full' || code == 'room_gone' || code == 'room_title') {
+        } else if (code == 'room_full' || code == 'room_gone' ||
+            code == 'room_title' || code == 'room_vip_only') {
           onToast?.call(errorMessage!);
           if (phase == RoomPhase.joining) {
             phase = RoomPhase.list;

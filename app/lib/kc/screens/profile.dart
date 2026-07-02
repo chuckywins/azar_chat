@@ -336,12 +336,16 @@ class _KCProfileState extends State<KCProfile> {
   }
 
   // DiceBear (ücretsiz, açık kaynak) çizgi avatar galerisi — seed = uid + varyant.
-  static const _avatarStyles = <(String, String)>[
-    ('adventurer', 'Macera'),
-    ('fun-emoji',  'Emoji'),
-    ('bottts',     'Robot'),
-    ('lorelei',    'Çizgi'),
-    ('open-peeps', 'Karakter'),
+  // (stil, etiket, vipOnly)
+  static const _avatarStyles = <(String, String, bool)>[
+    ('adventurer', 'Macera',   false),
+    ('fun-emoji',  'Emoji',    false),
+    ('bottts',     'Robot',    false),
+    ('lorelei',    'Çizgi',    false),
+    ('open-peeps', 'Karakter', false),
+    ('notionists', 'Prestij',  true),
+    ('big-ears',   'Sevimli',  true),
+    ('pixel-art',  'Piksel',   true),
   ];
 
   String _dicebearUrl(String style, String seed) =>
@@ -349,6 +353,7 @@ class _KCProfileState extends State<KCProfile> {
 
   void _avatarSheet(BuildContext context) {
     final uid = AuthController.instance.userId ?? 'guest';
+    final isVip = _vip?.isVip ?? false;
     String style = _avatarStyles.first.$1;
     showKCSheet(context, title: 'Avatarını seç 🎭', builder: (sCtx) {
       return StatefulBuilder(builder: (sCtx2, setSheet) {
@@ -362,10 +367,17 @@ class _KCProfileState extends State<KCProfile> {
                 scrollDirection: Axis.horizontal,
                 children: _avatarStyles.map((s) {
                   final on = style == s.$1;
+                  final locked = s.$3 && !isVip;
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: GestureDetector(
-                      onTap: () => setSheet(() => style = s.$1),
+                      onTap: () {
+                        if (locked) {
+                          KCContext.instance.toast('Bu avatar stili VIP üyelere özel 👑');
+                          return;
+                        }
+                        setSheet(() => style = s.$1);
+                      },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                         alignment: Alignment.center,
@@ -374,8 +386,14 @@ class _KCProfileState extends State<KCProfile> {
                           borderRadius: BorderRadius.circular(999),
                           border: Border.all(color: on ? KC.accent : KC.border),
                         ),
-                        child: Text(s.$2, style: kcManrope(13, w: FontWeight.w700,
-                            color: on ? KC.accent : KC.text)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text(s.$2, style: kcManrope(13, w: FontWeight.w700,
+                              color: on ? KC.accent : (locked ? KC.muted : KC.text))),
+                          if (s.$3) ...[
+                            const SizedBox(width: 5),
+                            Text(locked ? '🔒' : '👑', style: const TextStyle(fontSize: 11)),
+                          ],
+                        ]),
                       ),
                     ),
                   );

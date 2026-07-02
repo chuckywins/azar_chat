@@ -49,6 +49,25 @@ class FriendsService {
     return rows.cast<Map<String, dynamic>>().map(FriendInfo.fromJson).toList();
   }
 
+  /// Send a friend REQUEST (explicit consent flow). Server auto-accepts if the
+  /// other side already requested us. Throws: already_friends, request_pending,
+  /// friend_limit, self_request.
+  Future<void> sendFriendRequest(String targetId) async {
+    await _c.rpc('send_friend_request', params: {'p_target_id': targetId});
+  }
+
+  /// Accept/decline a friend request (from its notification payload).
+  Future<String> respondFriendRequest(String requestId, bool accept) async {
+    final res = await _c.rpc('respond_friend_request',
+        params: {'p_request_id': requestId, 'p_accept': accept});
+    return ((res as Map)['status'] as String?) ?? 'unknown';
+  }
+
+  /// Poke a friend (rate limited server-side: 10 min per friend).
+  Future<void> poke(String friendId) async {
+    await _c.rpc('poke_friend', params: {'p_friend_id': friendId});
+  }
+
   /// Invite a friend to a voice room (server verifies the friendship and
   /// rate-limits; delivered as a 'room_invite' notification).
   Future<void> inviteToRoom({

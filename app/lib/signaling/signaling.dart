@@ -58,10 +58,12 @@ class Signaling {
     _channel!.sink.add(jsonEncode(msg));
   }
 
-  void hello({String? name, String? gender, String? peerGender, String? deviceFp, String? mode, String? topic}) =>
+  void hello({String? name, String? gender, String? peerGender, String? deviceFp,
+      String? mode, String? topic, String? lang, String? countrySel, String? langSel}) =>
       _send({'type': 'hello',
         'name': ?name, 'gender': ?gender, 'peerGender': ?peerGender,
-        'deviceFp': ?deviceFp, 'mode': ?mode, 'topic': ?topic});
+        'deviceFp': ?deviceFp, 'mode': ?mode, 'topic': ?topic,
+        'lang': ?lang, 'countrySel': ?countrySel, 'langSel': ?langSel});
 
   void enqueue({String? mode, String? topic}) =>
       _send({'type': 'enqueue', 'mode': ?mode, 'topic': ?topic});
@@ -96,6 +98,18 @@ class Signaling {
 
   void roomExtend({required String method}) =>
       _send({'type': 'room_extend', 'method': method});
+
+  void roomLike(String peerId) => _send({'type': 'room_like', 'peerId': peerId});
+
+  // ── timed 1-1 voice calls + direct friend calls ────────────────────────
+  void callExtend() => _send({'type': 'call_extend'});
+
+  void callCreate({required String toUserId, required String mode}) =>
+      _send({'type': 'call_create', 'toUserId': toUserId, 'mode': mode});
+
+  void callJoin(String callId) => _send({'type': 'call_join', 'callId': callId});
+
+  void callCancel(String callId) => _send({'type': 'call_cancel', 'callId': callId});
 
   Future<void> dispose() async {
     await _sub?.cancel();

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/friends_service.dart';
 import '../../services/messages_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
@@ -18,9 +20,13 @@ class KCChats extends StatefulWidget {
 class _KCChatsState extends State<KCChats> {
   String _tab = 'msg';
   late Future<List<ConversationPreview>> _convs = MessagesService.instance.myConversations();
+  late Future<List<FriendInfo>> _friends = FriendsService.instance.myFriends();
 
   Future<void> _refresh() async {
-    setState(() => _convs = MessagesService.instance.myConversations());
+    setState(() {
+      _convs = MessagesService.instance.myConversations();
+      _friends = FriendsService.instance.myFriends();
+    });
     await _convs;
   }
 
@@ -72,7 +78,7 @@ class _KCChatsState extends State<KCChats> {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: RefreshIndicator(
+            child: _tab == 'friends' ? _friendsView() : RefreshIndicator(
               color: KC.accent, onRefresh: _refresh,
               child: FutureBuilder<List<ConversationPreview>>(
                 future: _convs,
@@ -129,6 +135,97 @@ class _KCChatsState extends State<KCChats> {
         ],
       ),
     );
+  }
+
+  // ── friends tab: list with call / poke / message actions ─────────────────
+  Widget _friendsView() {
+    return RefreshIndicator(
+      color: KC.accent, onRefresh: _refresh,
+      child: FutureBuilder<List<FriendInfo>>(
+        future: _friends,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: Padding(padding: EdgeInsets.all(40),
+                child: CircularProgressIndicator(color: KC.accent, strokeWidth: 2.4)));
+          }
+          final list = snap.data ?? const <FriendInfo>[];
+          if (list.isEmpty) {
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(36, 76, 36, 120),
+              children: [
+                Center(child: Text('Henüz arkadaşın yok',
+                    style: kcManrope(15, w: FontWeight.w600, color: KC.muted))),
+                const SizedBox(height: 6),
+                Center(child: Text(
+                    'Eşleşmelerde ve odalarda "Arkadaşlık isteği gönder" ile arkadaş edin.',
+                    textAlign: TextAlign.center,
+                    style: kcManrope(13, color: KC.muted, height: 1.4))),
+              ],
+            );
+          }
+          return ListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 120),
+            itemCount: list.length,
+            itemBuilder: (_, i) {
+              final f = list[i];
+              final u = kcUserFromConversationRow(
+                  peerId: f.userId, nickname: f.nickname, gender: f.gender);
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
+                child: Row(children: [
+                  KCAvatar(user: u, size: 48),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(u.name, overflow: TextOverflow.ellipsis,
+                      style: kcSora(15, w: FontWeight.w700))),
+                  _friendBtn(Icons.chat_bubble_outline_rounded, KC.muted, () {
+                    KCContext.instance.setChatUser(u);
+                    KCContext.instance.setScreen('thread');
+                  }),
+                  _friendBtn(Icons.call_rounded, KC.online, () =>
+                      KCContext.instance.startFriendCall(userId: f.userId, mode: 'voice')),
+                  _friendBtn(Icons.videocam_rounded, KC.accent2, () =>
+                      KCContext.instance.startFriendCall(userId: f.userId, mode: 'video')),
+                  _friendBtn(Icons.back_hand_rounded, KC.warning, () => _poke(f, u.name)),
+                ]),
+              ).animate().fadeIn(duration: 280.ms, delay: (i * 40).ms).slideX(begin: -0.04);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _friendBtn(IconData icon, Color color, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 7),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 38, height: 38,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.13),
+            shape: BoxShape.circle,
+            border: Border.all(color: color.withValues(alpha: 0.45)),
+          ),
+          alignment: Alignment.center,
+          child: Icon(icon, size: 17, color: color),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _poke(FriendInfo f, String name) async {
+    final ctx = KCContext.instance;
+    try {
+      await FriendsService.instance.poke(f.userId);
+      ctx.toast('👉 $name dürtüldü!');
+    } on PostgrestException catch (e) {
+      ctx.toast(e.message.contains('poke_too_soon')
+          ? 'Az önce dürttün — biraz bekle'
+          : 'Dürtme gönderilemedi');
+    } catch (_) {
+      ctx.toast('Dürtme gönderilemedi');
+    }
   }
 
   Widget _row(ConversationPreview c, KCUser u) {

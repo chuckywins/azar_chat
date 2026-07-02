@@ -71,6 +71,20 @@ class _KCVoiceCallScreenState extends State<KCVoiceCallScreen> {
     return '$m:$s';
   }
 
+  /// Remaining time for timed (random) voice matches; null for friend calls.
+  Duration? get _remaining {
+    final exp = KCContext.instance.app.callExpiresAt;
+    if (exp == null) return null;
+    final d = exp.difference(DateTime.now());
+    return d.isNegative ? Duration.zero : d;
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
   Future<void> _sendGift(GiftCatalogItem g) async {
     final ctx = KCContext.instance;
     final peerUid = ctx.app.peerUserId;
@@ -140,6 +154,8 @@ class _KCVoiceCallScreenState extends State<KCVoiceCallScreen> {
     final p = ctx.partner ?? kcUsers.first;
     final topic = ctx.app.matchTopic;
     final topPad = MediaQuery.of(context).padding.top;
+    final rem = _remaining;
+    final critical = rem != null && rem.inSeconds <= 30;
 
     return Stack(
       fit: StackFit.expand,
@@ -164,22 +180,40 @@ class _KCVoiceCallScreenState extends State<KCVoiceCallScreen> {
           top: topPad + 14, left: 14, right: 14,
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+              // countdown (timed random match) or elapsed (friend call);
+              // tapping the countdown extends the call.
+              GestureDetector(
+                onTap: rem == null ? null : () => ctx.app.extendCall(),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: rem != null && critical
+                        ? const Color(0xFFE5484D).withValues(alpha: 0.22)
+                        : Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: rem != null && critical
+                        ? const Color(0xFFE5484D)
+                        : Colors.white.withValues(alpha: 0.14)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Container(width: 7, height: 7,
+                        decoration: BoxDecoration(
+                          color: critical ? const Color(0xFFE5484D) : _teal,
+                          shape: BoxShape.circle,
+                          boxShadow: [BoxShadow(
+                              color: (critical ? const Color(0xFFE5484D) : _teal).withValues(alpha: 0.8),
+                              blurRadius: 8)],
+                        )),
+                    const SizedBox(width: 7),
+                    Text(rem == null ? _mmss : _fmt(rem),
+                        style: kcSora(13, w: FontWeight.w700, color: Colors.white)),
+                    if (rem != null) ...[
+                      const SizedBox(width: 6),
+                      Icon(Icons.more_time_rounded, size: 15,
+                          color: critical ? const Color(0xFFE5484D) : _teal),
+                    ],
+                  ]),
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(width: 7, height: 7,
-                      decoration: BoxDecoration(
-                        color: _teal, shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(color: _teal.withValues(alpha: 0.8), blurRadius: 8)],
-                      )),
-                  const SizedBox(width: 7),
-                  Text(_mmss, style: kcSora(13, w: FontWeight.w700, color: Colors.white)),
-                ]),
               ),
               const Spacer(),
               if (topic != null && topic.isNotEmpty)

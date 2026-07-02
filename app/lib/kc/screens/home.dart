@@ -60,7 +60,8 @@ class _KCHomeState extends State<KCHome> {
     final f = ctx.filters;
     final me = kcCurrentUser();
     final genderLabel = {'all': 'Herkes', 'k': 'Kadın', 'e': 'Erkek'}[f.gender]!;
-    final countryLabel = f.country == 'all' ? 'Tüm dünya' : f.country;
+    final countryLabel = f.country == 'all' ? 'Tüm dünya' : (f.country == 'TR' ? 'Türkiye' : f.country);
+    final langLabel = f.lang == 'all' ? 'Dil: Farketmez' : 'Dil: ${f.lang}';
 
     return SafeArea(
       bottom: false,
@@ -161,8 +162,14 @@ class _KCHomeState extends State<KCHome> {
                 KCChip(label: countryLabel, icon: Icons.public_rounded,
                     active: f.country != 'all', onTap: () => _countrySheet(context)),
                 const SizedBox(width: 8),
-                KCChip(label: 'Çeviri: ${f.lang}', icon: Icons.chat_bubble_outline_rounded,
-                    active: false, onTap: () => _langSheet(context)),
+                KCChip(label: langLabel, icon: Icons.translate_rounded,
+                    active: f.lang != 'all', onTap: () => _langSheet(context)),
+                if (f.isPaid) ...[
+                  const SizedBox(width: 8),
+                  KCChip(label: '💎 5/eşleşme', icon: Icons.info_outline_rounded,
+                      active: true, onTap: () => ctx.toast(
+                          'Filtreli her başarılı eşleşmede 5 elmas düşer — eşleşme olmazsa ücret yok')),
+                ],
               ],
             ),
           ),
@@ -326,22 +333,17 @@ class _KCHomeState extends State<KCHome> {
   void _genderSheet(BuildContext context) {
     final ctx = KCContext.instance;
     showKCSheet(context, title: 'Kiminle eşleşmek istersin?', builder: (sCtx) {
-      final entries = [('all','Herkes', false),('k','Kadınlar', true),('e','Erkekler', true)];
+      final entries = [('all', 'Herkes'), ('k', 'Kadınlar'), ('e', 'Erkekler')];
       return Column(mainAxisSize: MainAxisSize.min, children: [
         for (final e in entries)
-          _sheetOption(label: e.$2, selected: ctx.filters.gender == e.$1, locked: e.$3,
+          _sheetOption(label: e.$2, selected: ctx.filters.gender == e.$1,
+            paid: e.$1 != 'all',
             onTap: () {
-              if (e.$3) {
-                ctx.toast('Cinsiyet filtresi VIP özelliğidir');
-                Navigator.pop(sCtx);
-                ctx.setScreen('store');
-                return;
-              }
               ctx.setFilters(ctx.filters.copyWith(gender: e.$1));
               Navigator.pop(sCtx);
             }),
         const SizedBox(height: 6),
-        Text('Cinsiyet filtresi VIP ile açılır.',
+        Text('"Herkes" ücretsiz. Seçim yaparsan her başarılı eşleşmede 5 elmas düşer.',
             textAlign: TextAlign.center, style: kcManrope(12.5, color: KC.muted)),
       ]);
     });
@@ -350,28 +352,38 @@ class _KCHomeState extends State<KCHome> {
   void _countrySheet(BuildContext context) {
     final ctx = KCContext.instance;
     showKCSheet(context, title: 'Bölge seç', builder: (sCtx) {
+      const entries = [('all', 'Tüm dünya'), ('TR', 'Türkiye'),
+        ('Avrupa', 'Avrupa'), ('Asya', 'Asya'), ('Amerika', 'Amerika')];
       return Column(mainAxisSize: MainAxisSize.min, children: [
-        for (final v in ['all','Avrupa','Asya','Amerika'])
-          _sheetOption(label: v == 'all' ? 'Tüm dünya' : v,
-            selected: ctx.filters.country == v,
-            onTap: () { ctx.setFilters(ctx.filters.copyWith(country: v)); Navigator.pop(sCtx); }),
+        for (final e in entries)
+          _sheetOption(label: e.$2, selected: ctx.filters.country == e.$1,
+            paid: e.$1 != 'all',
+            onTap: () { ctx.setFilters(ctx.filters.copyWith(country: e.$1)); Navigator.pop(sCtx); }),
+        const SizedBox(height: 6),
+        Text('"Tüm dünya" ücretsiz. Bölge seçersen her eşleşmede 5 elmas düşer.',
+            textAlign: TextAlign.center, style: kcManrope(12.5, color: KC.muted)),
       ]);
     });
   }
 
   void _langSheet(BuildContext context) {
     final ctx = KCContext.instance;
-    showKCSheet(context, title: 'Çeviri dili', builder: (sCtx) {
-      const langs = {'TR':'Türkçe', 'EN':'İngilizce', 'ES':'İspanyolca', 'DE':'Almanca'};
+    showKCSheet(context, title: 'Karşı tarafın dili', builder: (sCtx) {
+      const langs = [('all', 'Farketmez'), ('TR', 'Türkçe'), ('EN', 'İngilizce'),
+        ('ES', 'İspanyolca'), ('DE', 'Almanca')];
       return Column(mainAxisSize: MainAxisSize.min, children: [
-        for (final entry in langs.entries)
-          _sheetOption(label: entry.value, selected: ctx.filters.lang == entry.key,
-            onTap: () { ctx.setFilters(ctx.filters.copyWith(lang: entry.key)); Navigator.pop(sCtx); }),
+        for (final e in langs)
+          _sheetOption(label: e.$2, selected: ctx.filters.lang == e.$1,
+            paid: e.$1 != 'all',
+            onTap: () { ctx.setFilters(ctx.filters.copyWith(lang: e.$1)); Navigator.pop(sCtx); }),
+        const SizedBox(height: 6),
+        Text('"Farketmez" ücretsiz. Dil seçersen her eşleşmede 5 elmas düşer.',
+            textAlign: TextAlign.center, style: kcManrope(12.5, color: KC.muted)),
       ]);
     });
   }
 
-  Widget _sheetOption({required String label, required bool selected, required VoidCallback onTap, bool locked = false}) {
+  Widget _sheetOption({required String label, required bool selected, required VoidCallback onTap, bool paid = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(onTap: onTap,
@@ -385,9 +397,20 @@ class _KCHomeState extends State<KCHome> {
           ),
           child: Row(children: [
             Text(label, style: kcManrope(15.5, w: FontWeight.w600)),
-            if (locked) ...[
-              const SizedBox(width: 7),
-              const Icon(Icons.lock_outline_rounded, size: 15, color: KC.accent),
+            if (paid) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: KC.bg, borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: KC.border),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const KCDiamond(size: 11),
+                  const SizedBox(width: 3),
+                  Text('5', style: kcSora(11, w: FontWeight.w700)),
+                ]),
+              ),
             ],
             const Spacer(),
             if (selected) const Icon(Icons.check_rounded, color: KC.accent, size: 20)

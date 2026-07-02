@@ -42,3 +42,4 @@ server/.env
 # OS
 .DS_Store
 Thumbs.db
+webadmin/config.local.php

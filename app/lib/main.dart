@@ -4,6 +4,7 @@ import 'auth/auth_controller.dart';
 import 'config.dart';
 import 'kc/kc_app.dart';
 import 'kc/kc_context.dart';
+import 'kc/screens/adult_gate.dart';
 import 'kc/screens/onboarding.dart';
 import 'kc/tokens.dart';
 import 'services/presence_service.dart';
@@ -17,6 +18,7 @@ Future<void> main() async {
     if (m == AuthMode.anonymous || m == AuthMode.authenticated) {
       PresenceService.instance.start();
       KCContext.instance.ensureInboxSubscribed();
+      KCContext.instance.ensureAlertsSubscribed();
     } else {
       PresenceService.instance.stop();
     }
@@ -25,6 +27,7 @@ Future<void> main() async {
       AuthController.instance.mode == AuthMode.authenticated) {
     PresenceService.instance.start();
     KCContext.instance.ensureInboxSubscribed();
+    KCContext.instance.ensureAlertsSubscribed();
   }
   runApp(const KeroApp());
 }
@@ -71,6 +74,11 @@ class _GateState extends State<_Gate> {
     if (!AppConfig.hasSupabase) return const _ConfigMissingScreen();
     if (_auth.mode == AuthMode.signedOut || _auth.mode == AuthMode.uninitialized) {
       return const Scaffold(backgroundColor: KC.bg, body: KCOnboarding());
+    }
+    // 18+ gate: signed in but age not confirmed yet (store policy).
+    final p = _auth.profile;
+    if (p != null && !p.isAdult) {
+      return const KCAdultGate();
     }
     return const KCApp();
   }

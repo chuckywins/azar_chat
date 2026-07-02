@@ -216,18 +216,19 @@ class _KCRoomsScreenState extends State<KCRoomsScreen> {
             ),
             const SizedBox(height: 14),
 
-            // 2×2 slot grid
+            // slot grid (system rooms are 3-4 seats; show exactly `cap` slots)
             Expanded(
               child: GridView.builder(
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10,
                 ),
-                itemCount: 4,
+                itemCount: r.cap.clamp(1, 4),
                 itemBuilder: (_, i) {
+                  final slots = r.cap.clamp(1, 4);
                   if (i < r.preview.length) {
                     return _filledSlot(r.preview[i],
-                        showExtra: i == 3 && extra > 0 ? extra : 0);
+                        showExtra: i == slots - 1 && extra > 0 ? extra : 0);
                   }
                   return _emptySlot(r, full);
                 },

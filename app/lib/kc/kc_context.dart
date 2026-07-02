@@ -7,18 +7,22 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../rooms/room_controller.dart';
 import '../services/gift_service.dart';
 import '../services/messages_service.dart';
+import '../services/notification_service.dart';
 import '../state/app_controller.dart';
 import 'mock_data.dart';
 import 'real_data.dart';
 
 class KCFilters {
   final String gender;   // 'all' | 'k' | 'e'
-  final String country;  // 'all' | label
-  final String lang;     // ISO label (TR, EN, ES, DE)
-  const KCFilters({this.gender = 'all', this.country = 'all', this.lang = 'TR'});
+  final String country;  // 'all' | 'TR' | 'Avrupa' | 'Asya' | 'Amerika'
+  final String lang;     // partner dili: 'all' | ISO-2 (TR, EN, ES, DE)
+  const KCFilters({this.gender = 'all', this.country = 'all', this.lang = 'all'});
 
   KCFilters copyWith({String? gender, String? country, String? lang}) =>
       KCFilters(gender: gender ?? this.gender, country: country ?? this.country, lang: lang ?? this.lang);
+
+  /// Any paid (non-'all') selection? Costs 5 diamonds per successful match.
+  bool get isPaid => gender != 'all' || country != 'all' || lang != 'all';
 }
 
 /// Mirrors the React ctx — owns coins, filters, partner, friends, toast.
@@ -146,9 +150,58 @@ class KCContext extends ChangeNotifier {
     // Rooms and 1-1 matching are mutually exclusive — free the mic first.
     if (roomsCtl.phase != RoomPhase.idle) await roomsCtl.close();
     final me = kcCurrentUser();
-    app.setProfile(name: me.name);
+    app.setProfile(name: me.name, gender: me.gender == 'k' ? 'F' : me.gender == 'e' ? 'M' : me.gender);
+    // Real filters: 'all' is free; any specific selection costs 5 diamonds/match.
+    app.peerGender = {'k': 'F', 'e': 'M'}[filters.gender] ?? 'any';
+    app.countrySel = filters.country == 'all' ? 'any' : filters.country;
+    app.langSel = filters.lang == 'all' ? 'any' : filters.lang;
     setScreen('matching');
     await app.start(mode: mode, topic: topic);
+  }
+
+  /// Ring a friend directly (voice or video). Callee gets a realtime 'call'
+  /// notification with a join button.
+  Future<void> startFriendCall({required String userId, required String mode}) async {
+    if (!_appBooted) {
+      await app.bootstrap();
+      _appBooted = true;
+    }
+    if (roomsCtl.phase != RoomPhase.idle) await roomsCtl.close();
+    app.setProfile(name: kcCurrentUser().name);
+    setScreen('matching');
+    await app.startDirectCall(toUserId: userId, mode: mode);
+  }
+
+  // ── incoming friend calls (via realtime notifications) ────────────────────
+
+  /// Set while an incoming call banner should be shown.
+  Map<String, dynamic>? incomingCall;
+  Timer? _incomingTimer;
+
+  Future<void> acceptIncomingCall() async {
+    final call = incomingCall;
+    incomingCall = null;
+    _incomingTimer?.cancel();
+    notifyListeners();
+    if (call == null) return;
+    if (!_appBooted) {
+      await app.bootstrap();
+      _appBooted = true;
+    }
+    if (roomsCtl.phase != RoomPhase.idle) await roomsCtl.close();
+    if (app.phase != AppPhase.idle) await app.leave();
+    app.setProfile(name: kcCurrentUser().name);
+    setScreen('matching');
+    await app.joinDirectCall(
+      callId: call['callId'] as String,
+      mode: (call['mode'] as String?) == 'voice' ? 'voice' : 'video',
+    );
+  }
+
+  void declineIncomingCall() {
+    incomingCall = null;
+    _incomingTimer?.cancel();
+    notifyListeners();
   }
 
   Future<void> nextPartner() async {
@@ -198,6 +251,44 @@ class KCContext extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Global alert listener (calls, pokes, friend requests) via realtime
+  /// notification inserts. Idempotent per user.
+  String? _alertsSubscribedFor;
+  RealtimeChannel? _alertsChannel;
+
+  void ensureAlertsSubscribed() {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    if (_alertsSubscribedFor == uid && _alertsChannel != null) return;
+    _alertsChannel?.unsubscribe();
+    _alertsSubscribedFor = uid;
+    _alertsChannel = NotificationService.instance.subscribe(uid, (n) {
+      switch (n.kind) {
+        case 'call':
+          final fresh = DateTime.now().difference(n.createdAt).inSeconds < 45;
+          if (fresh && n.payload?['callId'] != null && app.phase == AppPhase.idle) {
+            incomingCall = n.payload;
+            notifyListeners();
+            // auto-dismiss when the server-side ring times out
+            _incomingTimer?.cancel();
+            _incomingTimer = Timer(const Duration(seconds: 45), declineIncomingCall);
+          }
+          break;
+        case 'poke':
+          toast('👉 ${n.body ?? 'Dürtüldün!'}');
+          break;
+        case 'friend_request':
+          toast('🤝 ${n.body ?? 'Yeni arkadaşlık isteği'} — Bildirimlere bak');
+          break;
+        case 'room_invite':
+          toast('🎙 ${n.body ?? 'Oda daveti geldi'} — Bildirimlere bak');
+          break;
+        default:
+          break;
+      }
+    });
+  }
+
   /// Wire up a global inbox listener so the user gets toasts even when not
   /// inside the thread of that peer.  Idempotent — re-call after auth changes.
   void ensureInboxSubscribed() {
@@ -244,6 +335,11 @@ class KCContext extends ChangeNotifier {
   }
 
   void _onAppChange() {
+    // Surface transient call events (extension, expiry, ring results).
+    if (app.callToast != null) {
+      toast(app.callToast!);
+      app.callToast = null;
+    }
     // Reflect AppController phase changes into the visible KC screen.
     switch (app.phase) {
       case AppPhase.idle:
@@ -283,6 +379,8 @@ class KCContext extends ChangeNotifier {
     _giftBurstTimer?.cancel();
     _giftChannel?.unsubscribe();
     _inboxChannel?.unsubscribe();
+    _alertsChannel?.unsubscribe();
+    _incomingTimer?.cancel();
     app.removeListener(_onAppChange);
     app.dispose();
     roomsCtl.removeListener(_onRoomsChange);

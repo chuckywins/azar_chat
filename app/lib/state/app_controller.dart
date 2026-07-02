@@ -63,6 +63,15 @@ class AppController extends ChangeNotifier {
   /// Topic of the current match, as decided by the server (null = none).
   String? matchTopic;
 
+  /// Server-enforced call expiry for timed (random voice) matches.
+  DateTime? callExpiresAt;
+
+  /// Transient toast text produced by call events — consumed by KCContext.
+  String? callToast;
+
+  /// Direct friend-call id while ringing (caller side).
+  String? activeCallId;
+
   String? selfId;
   String? peerId;
   String? peerName;
@@ -86,6 +95,9 @@ class AppController extends ChangeNotifier {
   String displayName = 'Misafir';
   String gender = 'X';      // M | F | X
   String peerGender = 'any'; // M | F | any
+  String countrySel = 'any'; // 'any' | 'TR' | 'Avrupa' | 'Asya' | 'Amerika'
+  String langSel = 'any';    // partner language filter: 'any' | ISO-2
+  String myLang = 'TR';      // own language (auto/locale)
 
   List<Map<String, dynamic>> _iceServers = const [];
 
@@ -121,7 +133,8 @@ class AppController extends ChangeNotifier {
 
       final deviceFp = await DeviceFingerprint.get();
       _signaling!.hello(name: displayName, gender: gender, peerGender: peerGender,
-          deviceFp: deviceFp, mode: mode, topic: topic);
+          deviceFp: deviceFp, mode: mode, topic: topic,
+          lang: myLang, countrySel: countrySel, langSel: langSel);
       _signaling!.enqueue(mode: mode, topic: topic);
     } catch (e) {
       errorMessage = e.toString();
@@ -134,6 +147,47 @@ class AppController extends ChangeNotifier {
     _teardownPeer();
     _setPhase(AppPhase.searching);
     _signaling!.next();
+  }
+
+  /// Shared plumbing for direct friend calls: media + socket + hello.
+  Future<bool> _prepareDirect(String mode) async {
+    if (phase == AppPhase.connecting || phase == AppPhase.searching || phase == AppPhase.inCall) {
+      return false;
+    }
+    this.mode = mode;
+    topic = 'random';
+    _setPhase(AppPhase.connecting);
+    try {
+      final stream = await _media.start(cam: mode == 'video');
+      localRenderer.srcObject = stream;
+      _signaling = Signaling(
+        AppConfig.signalingUrl,
+        accessToken: AuthController.instance.accessToken,
+      );
+      await _signaling!.connect();
+      _msgSub = _signaling!.messages.listen(_onMessage);
+      final deviceFp = await DeviceFingerprint.get();
+      _signaling!.hello(name: displayName, gender: gender, deviceFp: deviceFp, mode: mode);
+      return true;
+    } catch (e) {
+      errorMessage = e.toString();
+      _setPhase(AppPhase.error);
+      return false;
+    }
+  }
+
+  /// Ring a friend (caller side). Waits in "searching" until they join.
+  Future<void> startDirectCall({required String toUserId, required String mode}) async {
+    if (!await _prepareDirect(mode)) return;
+    _signaling!.callCreate(toUserId: toUserId, mode: mode);
+    _setPhase(AppPhase.searching);
+  }
+
+  /// Answer an incoming friend call (callee side).
+  Future<void> joinDirectCall({required String callId, required String mode}) async {
+    if (!await _prepareDirect(mode)) return;
+    _signaling!.callJoin(callId);
+    _setPhase(AppPhase.searching);
   }
 
   Future<void> leave() async {
@@ -190,12 +244,51 @@ class AppController extends ChangeNotifier {
         _setPhase(AppPhase.ended);
         break;
 
+      case 'call_extended':
+        final exp = (msg['expiresAt'] as num?)?.toInt();
+        if (exp != null) callExpiresAt = DateTime.fromMillisecondsSinceEpoch(exp);
+        final mine = msg['self'] == true;
+        final by = msg['byName'] as String? ?? 'Karşı taraf';
+        callToast = mine ? '⏱ Süre uzatıldı!' : '⏱ $by süreyi uzattı!';
+        notifyListeners();
+        break;
+
+      case 'call_expired':
+        callToast = '⏰ Görüşme süresi doldu';
+        _teardownPeer();
+        _setPhase(AppPhase.ended);
+        break;
+
+      case 'call_ringing':
+        activeCallId = msg['callId'] as String?;
+        notifyListeners();
+        break;
+
+      case 'call_timeout':
+        callToast = 'Cevap yok 😞';
+        activeCallId = null;
+        errorMessage = 'Arkadaşın şu an müsait değil';
+        _setPhase(AppPhase.ended);
+        break;
+
       case 'error':
+        final code = msg['code'] as String?;
+        // Soft errors: keep the call/session alive, just inform.
+        if (code == 'no_extension_left' || code == 'call_max' ||
+            code == 'extend_failed' || code == 'room_no_timer') {
+          callToast = (msg['message'] as String?) ?? 'Süre uzatılamadı';
+          notifyListeners();
+          break;
+        }
         errorMessage = (msg['message'] as String?) ?? 'unknown error';
         _setPhase(AppPhase.error);
         break;
     }
   }
+
+  /// Extend the current timed voice match (+2:30, VIP +4:00). Server charges
+  /// a free daily right first, then a time card.
+  void extendCall() => _signaling?.callExtend();
 
   Future<void> _onMatched(Map<String, dynamic> msg) async {
     _teardownPeer();
@@ -209,6 +302,9 @@ class AppController extends ChangeNotifier {
     peerAvatarUrl = info?['avatarUrl'] as String?;
     _peerUserId = info?['userId'] as String?;
     matchTopic = msg['topic'] as String?;
+    final callExp = (msg['callExpiresAt'] as num?)?.toInt();
+    callExpiresAt = callExp == null ? null : DateTime.fromMillisecondsSinceEpoch(callExp);
+    activeCallId = null;
     matchedAt = DateTime.now();
 
     final localStream = _media.stream;
@@ -320,6 +416,7 @@ class AppController extends ChangeNotifier {
     peerAvatarUrl = null;
     _peerUserId = null;
     matchTopic = null;
+    callExpiresAt = null;
     remoteRenderer.srcObject = null;
     // Any in-flight game belongs to the prior match — reset it.
     GameController.instance.resetAll();

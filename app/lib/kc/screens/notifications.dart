@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../auth/auth_controller.dart';
+import '../../services/friends_service.dart';
 import '../../services/notification_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
@@ -53,6 +54,9 @@ class _KCNotificationsState extends State<KCNotifications> {
       case 'vip':     return Icons.workspace_premium_rounded;
       case 'admin':   return Icons.shield_outlined;
       case 'room_invite': return Icons.graphic_eq_rounded;
+      case 'friend_request': return Icons.person_add_alt_1_rounded;
+      case 'poke':    return Icons.back_hand_rounded;
+      case 'call':    return Icons.call_rounded;
       default:        return Icons.notifications_rounded;
     }
   }
@@ -67,6 +71,9 @@ class _KCNotificationsState extends State<KCNotifications> {
       case 'vip':     return KC.accent;
       case 'admin':   return KC.verify;
       case 'room_invite': return KC.online;
+      case 'friend_request': return KC.online;
+      case 'poke':    return KC.warning;
+      case 'call':    return KC.accent2;
       default:        return KC.muted;
     }
   }
@@ -161,6 +168,14 @@ class _KCNotificationsState extends State<KCNotifications> {
                             child: Text('Katıl', style: kcSora(12, w: FontWeight.w700, color: Colors.white)),
                           ),
                         )
+                      else if (n.kind == 'friend_request' && n.payload?['requestId'] != null)
+                        Row(mainAxisSize: MainAxisSize.min, children: [
+                          _reqBtn(Icons.close_rounded, KC.danger,
+                              () => _respondRequest(n, false)),
+                          const SizedBox(width: 7),
+                          _reqBtn(Icons.check_rounded, KC.online,
+                              () => _respondRequest(n, true)),
+                        ])
                       else
                         Text(_rel(n.createdAt), style: kcManrope(11, color: KC.muted)),
                     ]),
@@ -172,6 +187,49 @@ class _KCNotificationsState extends State<KCNotifications> {
         )),
       ]),
     );
+  }
+
+  Widget _reqBtn(IconData icon, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32, height: 32,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.16),
+          shape: BoxShape.circle,
+          border: Border.all(color: color.withValues(alpha: 0.6)),
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, size: 17, color: color),
+      ),
+    );
+  }
+
+  Future<void> _respondRequest(InAppNotification n, bool accept) async {
+    final ctx = KCContext.instance;
+    final requestId = n.payload?['requestId'] as String?;
+    if (requestId == null) return;
+    try {
+      final status = await FriendsService.instance.respondFriendRequest(requestId, accept);
+      ctx.toast(status == 'accepted'
+          ? '🎉 Arkadaş oldunuz!'
+          : 'İstek reddedildi');
+    } on PostgrestException catch (e) {
+      final msg = e.message;
+      if (msg.contains('request_gone')) {
+        ctx.toast('İstek artık geçerli değil');
+      } else if (msg.contains('friend_limit_peer')) {
+        ctx.toast('Karşı tarafın arkadaş listesi dolu');
+      } else if (msg.contains('friend_limit')) {
+        ctx.toast('Arkadaş listen dolu (20/20)');
+      } else {
+        ctx.toast('İşlem başarısız');
+      }
+    } catch (_) {
+      ctx.toast('İşlem başarısız');
+    }
+    await NotificationService.instance.markRead(n.id);
+    await _refresh();
   }
 
   String _rel(DateTime dt) {

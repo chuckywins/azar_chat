@@ -110,8 +110,6 @@ class KCOnboarding extends StatelessWidget {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Expanded(child: KCButton(label: '  Apple', variant: KCButtonVariant.ghost, size: KCButtonSize.md, onTap: () => KCContext.instance.setTab('home'))),
-                      const SizedBox(width: 12),
                       Expanded(child: KCButton(
                         label: 'E-posta',
                         icon: Icons.mail_outline_rounded,
@@ -130,7 +128,7 @@ class KCOnboarding extends StatelessWidget {
                         TextSpan(text: 'Kullanım Koşulları', style: kcManrope(11.5, color: KC.text, w: FontWeight.w700)),
                         const TextSpan(text: ' ve '),
                         TextSpan(text: 'Gizlilik', style: kcManrope(11.5, color: KC.text, w: FontWeight.w700)),
-                        const TextSpan(text: ' politikasını kabul edersin.'),
+                        const TextSpan(text: ' politikasını kabul edersin. kerochat 18 yaş ve üzeri içindir.'),
                       ],
                     ),
                   ),

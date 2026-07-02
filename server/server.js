@@ -61,38 +61,66 @@ const queue = [];
 const ROOM_CAP = 10;
 const ROOM_TITLE_MAX = 60;
 const ROOM_CHAT_MAX = 400;
-// Room lifetime: 3 min base, 7 min if the creator is VIP; +3 min per extension,
-// never further than 30 min from "now".
-const ROOM_BASE_MS   = 3 * 60_000;
+// Room lifetime (VIP-created rooms): 7 min; +3 min per extension, max 30 min ahead.
+// System rooms never expire.
 const ROOM_VIP_MS    = 7 * 60_000;
 const ROOM_EXT_MS    = 3 * 60_000;
 const ROOM_MAX_AHEAD = 30 * 60_000;
+
+// Random 1-1 VOICE matches are time-boxed: 2 min; extensions +2:30 (VIP: +4:00).
+const VOICE_CALL_MS    = 2 * 60_000;
+const VOICE_EXT_MS     = 150_000;
+const VOICE_EXT_VIP_MS = 240_000;
+
+// System-generated rooms: the server keeps a pool of small open rooms alive.
+const SYSTEM_ROOM_MIN_OPEN = 5;    // always at least this many joinable system rooms
+const SYSTEM_ROOM_MAX      = 40;   // runaway guard
+const SYSTEM_TOPICS = [
+  ['Tanışalım', 'Tanışma'], ['Şarkını Söyle', 'Müzik'], ['Dertleşelim', 'Dertleşme'],
+  ['İtiraf Saati', 'İtiraf'], ['Gece Sohbeti', 'Sohbet'], ['English Time', 'English'],
+  ['Oyun & Eğlence', 'Oyun'], ['Müzik Keyfi', 'Müzik'], ['Felsefe Masası', 'Sohbet'],
+];
+
+// Region groups for the real country filter.
+const REGIONS = {
+  'TR':      new Set(['TR']),
+  'Avrupa':  new Set(['DE','FR','GB','NL','ES','IT','PT','BE','AT','CH','SE','NO','DK',
+                      'FI','PL','CZ','GR','RO','BG','HU','IE','UA','RS','HR','AZ','TR']),
+  'Asya':    new Set(['JP','KR','CN','IN','ID','TH','VN','PH','MY','SG','PK','BD','KZ',
+                      'UZ','SA','AE','QA','IQ','IR','IL','JO','LB','KW']),
+  'Amerika': new Set(['US','CA','MX','BR','AR','CO','CL','PE','VE','EC','UY','BO','PY',
+                      'CR','PA','DO','GT']),
+};
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
 
 class Room {
-  constructor({ title, topic, ownerId, lifetimeMs }) {
+  constructor({ title, topic, ownerId, lifetimeMs, system = false, cap = ROOM_CAP }) {
     this.id = crypto.randomBytes(4).toString('hex');
     this.title = title;
     this.topic = topic;
-    this.ownerId = ownerId;          // peer id of current owner
+    this.ownerId = ownerId;          // peer id of current owner (null for system rooms)
+    this.system = system;            // server-generated room: never expires, no owner
+    this.cap = cap;
     this.createdAt = Date.now();
-    this.expiresAt = Date.now() + (lifetimeMs || ROOM_BASE_MS);
+    this.expiresAt = system ? null : Date.now() + (lifetimeMs || ROOM_VIP_MS);
     /** @type {string[]} joins in order — first is oldest (owner succession) */
     this.memberIds = [];
   }
+
+  get isFull() { return this.memberIds.length >= this.cap; }
 
   members() {
     return this.memberIds.map((id) => peers.get(id)).filter(Boolean);
   }
 
   memberInfo(p) {
-    return { ...p.publicInfo(), muted: p.muted, isOwner: p.id === this.ownerId };
+    return { ...p.publicInfo(), muted: p.muted, isOwner: this.ownerId != null && p.id === this.ownerId };
   }
 
   summary() {
-    const owner = peers.get(this.ownerId);
+    const owner = this.ownerId ? peers.get(this.ownerId) : null;
     // First 4 members power the swipe-deck slot preview on the client.
     const preview = this.memberIds.slice(0, 4)
       .map((id) => peers.get(id))
@@ -100,8 +128,9 @@ class Room {
       .map((p) => ({ id: p.id, userId: p.userId, name: p.name, avatarUrl: p.avatarUrl }));
     return {
       id: this.id, title: this.title, topic: this.topic,
-      count: this.memberIds.length, cap: ROOM_CAP,
-      ownerName: owner ? owner.name : '—',
+      count: this.memberIds.length, cap: this.cap,
+      ownerName: this.system ? 'kerochat' : (owner ? owner.name : '—'),
+      system: this.system,
       expiresAt: this.expiresAt,
       preview,
     };
@@ -135,9 +164,15 @@ class Peer {
     this.mode = 'video';
     /** Voice-mode topic ('random' matches anything, BlindID-style). */
     this.topic = 'random';
+    /** Own language + paid filters (region/language; 'any' = free). */
+    this.lang = 'TR';
+    this.countrySel = 'any';
+    this.langSel = 'any';
     /** @type {'idle' | 'queued' | 'matched'} */
     this.status = 'idle';
     this.matchId = null;
+    /** Epoch ms — set for timed (random voice) matches. */
+    this.callExpiresAt = null;
     this.roomId = null;
     this.muted = false;
     this.ip = null;
@@ -158,6 +193,7 @@ class Peer {
       country: this.country,
       avatarUrl: this.avatarUrl,
       isAdmin: this.role === 'admin',
+      isVip: this.isVip,
     };
   }
 }
@@ -364,6 +400,17 @@ async function isBanned(userId) {
   }
 }
 
+function regionOk(sel, country) {
+  if (sel === 'any') return true;
+  const set = REGIONS[sel];
+  return !!(set && country && set.has(country));
+}
+
+/** Any paid (non-'any') filter selected? Charged 5 coins per successful match. */
+function hasPaidFilters(p) {
+  return p.peerGender !== 'any' || p.countrySel !== 'any' || p.langSel !== 'any';
+}
+
 function compatible(a, b) {
   if (a.id === b.id) return false;
   // Same authenticated user with two sockets — don't match with self.
@@ -375,6 +422,10 @@ function compatible(a, b) {
   }
   if (a.peerGender !== 'any' && b.gender !== a.peerGender) return false;
   if (b.peerGender !== 'any' && a.gender !== b.peerGender) return false;
+  if (!regionOk(a.countrySel, b.country)) return false;
+  if (!regionOk(b.countrySel, a.country)) return false;
+  if (a.langSel !== 'any' && b.lang !== a.langSel) return false;
+  if (b.langSel !== 'any' && a.lang !== b.langSel) return false;
   return true;
 }
 
@@ -386,14 +437,39 @@ function matchTopic(a, b) {
   return null;
 }
 
-function pair(a, b) {
+function pair(a, b, { timed = false } = {}) {
   a.status = 'matched'; b.status = 'matched';
   a.matchId = b.id;     b.matchId = a.id;
   const aPolite = a.id > b.id;
   const topic = matchTopic(a, b);
-  a.send({ type: 'matched', peerId: b.id, peerInfo: b.publicInfo(), polite:  aPolite, mode: a.mode, topic });
-  b.send({ type: 'matched', peerId: a.id, peerInfo: a.publicInfo(), polite: !aPolite, mode: b.mode, topic });
-  console.log(`[match] ${a.id.slice(0, 8)}(${a.userId?.slice(0,8) || 'guest'}) <-> ${b.id.slice(0, 8)}(${b.userId?.slice(0,8) || 'guest'})`);
+
+  // Random voice matches are time-boxed (2 min); friend calls are not.
+  let callExpiresAt = null;
+  if (timed) {
+    callExpiresAt = Date.now() + VOICE_CALL_MS;
+    a.callExpiresAt = callExpiresAt;
+    b.callExpiresAt = callExpiresAt;
+  }
+
+  a.send({ type: 'matched', peerId: b.id, peerInfo: b.publicInfo(), polite:  aPolite, mode: a.mode, topic, callExpiresAt });
+  b.send({ type: 'matched', peerId: a.id, peerInfo: a.publicInfo(), polite: !aPolite, mode: b.mode, topic, callExpiresAt });
+
+  // Paid filters: 5 coins per successful match, charged per selecting side.
+  if (supabase) {
+    for (const p of [a, b]) {
+      if (p.userId && hasPaidFilters(p)) {
+        supabase.rpc('charge_match_filter', { p_user_id: p.userId }).then(
+          ({ data, error }) => {
+            if (error) console.warn(`[filter-charge] ${p.userId.slice(0,8)}: ${error.message}`);
+            else if (data && data.charged === false) console.warn(`[filter-charge] ${p.userId.slice(0,8)}: insufficient at match time`);
+          },
+          () => {},
+        );
+      }
+    }
+  }
+
+  console.log(`[match] ${a.id.slice(0, 8)}(${a.userId?.slice(0,8) || 'guest'}) <-> ${b.id.slice(0, 8)}(${b.userId?.slice(0,8) || 'guest'})${timed ? ' [2dk]' : ''}`);
 }
 
 async function enqueue(peer) {
@@ -407,6 +483,21 @@ async function enqueue(peer) {
     return;
   }
 
+  // Paid filters need a signed-in user with at least 5 coins up-front.
+  if (hasPaidFilters(peer) && supabase) {
+    if (!peer.userId) {
+      peer.peerGender = 'any'; peer.countrySel = 'any'; peer.langSel = 'any';
+    } else {
+      try {
+        const { data } = await supabase.from('profiles').select('coins').eq('id', peer.userId).maybeSingle();
+        if (!data || (data.coins ?? 0) < 5) {
+          return peer.send({ type: 'error', code: 'filter_coins',
+            message: 'Filtreli eşleşme için en az 5 elmas gerekli.' });
+        }
+      } catch (_) {/* fail open */}
+    }
+  }
+
   const ix = queue.indexOf(peer.id);
   if (ix >= 0) queue.splice(ix, 1);
 
@@ -415,7 +506,7 @@ async function enqueue(peer) {
     if (!other || other.status !== 'queued') { queue.splice(i, 1); i--; continue; }
     if (compatible(peer, other)) {
       queue.splice(i, 1);
-      pair(peer, other);
+      pair(peer, other, { timed: peer.mode === 'voice' });
       return;
     }
   }
@@ -430,10 +521,65 @@ function unpair(peer, reason) {
   if (partner) {
     partner.status = 'idle';
     partner.matchId = null;
+    partner.callExpiresAt = null;
     partner.send({ type: 'peer_left', reason });
   }
   peer.status = 'idle';
   peer.matchId = null;
+  peer.callExpiresAt = null;
+}
+
+// ── timed voice calls: expiry sweep + extension ─────────────────────────────
+
+setInterval(() => {
+  const now = Date.now();
+  for (const p of peers.values()) {
+    if (p.status !== 'matched' || !p.callExpiresAt || p.callExpiresAt > now) continue;
+    const partner = p.matchId ? peers.get(p.matchId) : null;
+    p.send({ type: 'call_expired' });
+    if (partner) partner.send({ type: 'call_expired' });
+    // silent unpair — both already notified with call_expired
+    p.status = 'idle'; p.matchId = null; p.callExpiresAt = null;
+    if (partner) { partner.status = 'idle'; partner.matchId = null; partner.callExpiresAt = null; }
+    console.log(`[call] expired ${p.id.slice(0, 8)} <-> ${partner ? partner.id.slice(0, 8) : '?'}`);
+  }
+}, 5_000);
+
+async function handleCallExtend(peer) {
+  if (peer.status !== 'matched' || !peer.callExpiresAt) return;
+  const partner = peer.matchId ? peers.get(peer.matchId) : null;
+  if (!partner) return;
+
+  const extMs = peer.isVip ? VOICE_EXT_VIP_MS : VOICE_EXT_MS;
+  if (peer.callExpiresAt - Date.now() + extMs > ROOM_MAX_AHEAD) {
+    return peer.send({ type: 'error', code: 'call_max', message: 'Görüşme süresi üst sınırda.' });
+  }
+
+  let method = 'free';
+  let freeLeft = null;
+  if (supabase) {
+    if (!peer.userId) {
+      return peer.send({ type: 'error', code: 'not_authed', message: 'Süre uzatmak için giriş yapmalısın.' });
+    }
+    const { data, error } = await supabase.rpc('use_call_extension', { p_user_id: peer.userId });
+    if (error) {
+      if ((error.message || '').includes('no_extension_left')) {
+        return peer.send({ type: 'error', code: 'no_extension_left',
+          message: 'Bugünkü ücretsiz hakların ve süre kartların bitti.' });
+      }
+      console.error(`[call-extend] RPC error: ${error.message}`);
+      return peer.send({ type: 'error', code: 'extend_failed', message: 'Süre uzatılamadı.' });
+    }
+    method = data?.method || 'free';
+    freeLeft = data?.free_left ?? null;
+  }
+
+  const newExpiry = peer.callExpiresAt + extMs;
+  peer.callExpiresAt = newExpiry;
+  partner.callExpiresAt = newExpiry;
+  peer.send({ type: 'call_extended', expiresAt: newExpiry, byName: peer.name, method, freeLeft, self: true });
+  partner.send({ type: 'call_extended', expiresAt: newExpiry, byName: peer.name, method, self: false });
+  console.log(`[call] extend +${Math.round(extMs / 1000)}s by ${peer.id.slice(0, 8)} (${method})`);
 }
 
 function removeFromQueue(peerId) {
@@ -449,6 +595,13 @@ async function handleHello(peer, msg) {
   if (['M','F','any'].includes(msg.peerGender))   peer.peerGender = msg.peerGender;
   if (['video','voice'].includes(msg.mode))       peer.mode = msg.mode;
   if (typeof msg.topic === 'string' && msg.topic.trim()) peer.topic = msg.topic.trim().slice(0, 30);
+  if (typeof msg.lang === 'string' && /^[A-Z]{2}$/i.test(msg.lang)) peer.lang = msg.lang.toUpperCase();
+  if (typeof msg.countrySel === 'string' && (msg.countrySel === 'any' || REGIONS[msg.countrySel])) {
+    peer.countrySel = msg.countrySel;
+  }
+  if (typeof msg.langSel === 'string' && (msg.langSel === 'any' || /^[A-Z]{2}$/i.test(msg.langSel))) {
+    peer.langSel = msg.langSel === 'any' ? 'any' : msg.langSel.toUpperCase();
+  }
 
   // Optional in-message token (fallback if connect URL didn't carry one).
   if (typeof msg.token === 'string' && !peer.userId) {
@@ -506,22 +659,49 @@ function leaveRoom(peer, { silent = false } = {}) {
   const ix = room.memberIds.indexOf(peer.id);
   if (ix >= 0) room.memberIds.splice(ix, 1);
 
-  if (room.memberIds.length === 0) {
+  if (room.memberIds.length === 0 && !room.system) {
     rooms.delete(room.id);
     console.log(`[room] ${room.id} closed (empty)`);
     return;
   }
 
-  // Owner succession: oldest remaining member takes over.
+  // Owner succession (VIP rooms only): oldest remaining member takes over.
   let newOwnerId = null;
-  if (room.ownerId === peer.id) {
+  if (!room.system && room.ownerId === peer.id && room.memberIds.length > 0) {
     room.ownerId = room.memberIds[0];
     newOwnerId = room.ownerId;
     console.log(`[room] ${room.id} owner -> ${room.ownerId.slice(0, 8)}`);
   }
 
-  if (!silent) {
+  if (!silent && room.memberIds.length > 0) {
     room.broadcast({ type: 'room_peer_left', peerId: peer.id, newOwnerId });
+  }
+  ensureSystemRooms();
+}
+
+// ── system room pool: always keep small joinable rooms alive ────────────────
+function ensureSystemRooms() {
+  const systemRooms = [...rooms.values()].filter((r) => r.system);
+  const open = systemRooms.filter((r) => !r.isFull);
+
+  // prune surplus EMPTY system rooms (keep the pool tidy)
+  const empties = open.filter((r) => r.memberIds.length === 0);
+  let surplus = open.length - SYSTEM_ROOM_MIN_OPEN;
+  for (const r of empties) {
+    if (surplus <= 0) break;
+    rooms.delete(r.id);
+    surplus--;
+  }
+
+  let openCount = [...rooms.values()].filter((r) => r.system && !r.isFull).length;
+  let total = [...rooms.values()].filter((r) => r.system).length;
+  while (openCount < SYSTEM_ROOM_MIN_OPEN && total < SYSTEM_ROOM_MAX) {
+    const [title, topic] = SYSTEM_TOPICS[Math.floor(Math.random() * SYSTEM_TOPICS.length)];
+    const cap = Math.random() < 0.5 ? 3 : 4;
+    const room = new Room({ title, topic, ownerId: null, system: true, cap });
+    rooms.set(room.id, room);
+    openCount++; total++;
+    console.log(`[room] system ${room.id} "${title}" (cap=${cap})`);
   }
 }
 
@@ -530,6 +710,11 @@ async function handleRoomCreate(peer, msg) {
     peer.send({ type: 'error', code: 'banned', message: 'Yasaklısın.' });
     try { peer.ws.close(1008, 'banned'); } catch (_) {}
     return;
+  }
+  // Room creation is a VIP privilege (system rooms cover everyone else).
+  if (supabase && !peer.isVip && peer.role !== 'admin') {
+    return peer.send({ type: 'error', code: 'room_vip_only',
+      message: 'Oda kurmak VIP üyelere özel. Sistem odalarına katılabilirsin!' });
   }
   // A peer can be in exactly one context: leave queue/match/old room first.
   unpair(peer, 'leave');
@@ -542,7 +727,7 @@ async function handleRoomCreate(peer, msg) {
 
   const room = new Room({
     title, topic, ownerId: peer.id,
-    lifetimeMs: peer.isVip ? ROOM_VIP_MS : ROOM_BASE_MS,
+    lifetimeMs: ROOM_VIP_MS,
   });
   rooms.set(room.id, room);
   room.memberIds.push(peer.id);
@@ -567,7 +752,7 @@ async function handleRoomJoin(peer, msg) {
   const room = rooms.get(typeof msg.roomId === 'string' ? msg.roomId : '');
   if (!room) return peer.send({ type: 'error', code: 'room_gone', message: 'Oda bulunamadı veya kapandı.' });
   if (room.memberIds.includes(peer.id)) return;
-  if (room.memberIds.length >= ROOM_CAP) {
+  if (room.isFull) {
     return peer.send({ type: 'error', code: 'room_full', message: 'Oda dolu.' });
   }
 
@@ -581,8 +766,9 @@ async function handleRoomJoin(peer, msg) {
   // Tell existing members BEFORE adding, so the list they hold stays consistent.
   room.broadcast({ type: 'room_peer_joined', member: room.memberInfo(peer) });
   room.memberIds.push(peer.id);
+  ensureSystemRooms(); // room may be full now — keep the open pool stocked
 
-  console.log(`[room] ${room.id} join ${peer.id.slice(0, 8)} (${room.memberIds.length}/${ROOM_CAP})`);
+  console.log(`[room] ${room.id} join ${peer.id.slice(0, 8)} (${room.memberIds.length}/${room.cap})`);
   peer.send({
     type: 'room_joined',
     room: room.summary(),
@@ -596,11 +782,27 @@ function handleRoomLeave(peer) {
 }
 
 function handleRoomList(peer) {
+  // Full rooms are hidden — users can only see rooms they can actually join.
   const list = [...rooms.values()]
+    .filter((r) => !r.isFull)
     .sort((a, b) => b.memberIds.length - a.memberIds.length)
     .slice(0, 50)
     .map((r) => r.summary());
   peer.send({ type: 'room_list', rooms: list });
+}
+
+// Anyone in the room can "like" a member — visible to the WHOLE room.
+function handleRoomLike(peer, msg) {
+  if (!peer.roomId) return;
+  const room = rooms.get(peer.roomId);
+  if (!room) return;
+  const target = peers.get(typeof msg.peerId === 'string' ? msg.peerId : '');
+  if (!target || target.roomId !== room.id || target.id === peer.id) return;
+  room.broadcast({
+    type: 'room_like',
+    fromId: peer.id, fromName: peer.name,
+    targetId: target.id, targetName: target.name,
+  });
 }
 
 function handleRoomSignal(peer, msg) {
@@ -629,20 +831,13 @@ function handleRoomState(peer, msg) {
   room.broadcast({ type: 'room_member_state', peerId: peer.id, muted: peer.muted }, peer.id);
 }
 
-function handleRoomKick(peer, msg) {
-  if (!peer.roomId) return;
-  const room = rooms.get(peer.roomId);
-  if (!room || room.ownerId !== peer.id) return;
-  const target = peers.get(typeof msg.peerId === 'string' ? msg.peerId : '');
-  if (!target || target.roomId !== room.id || target.id === peer.id) return;
-  target.send({ type: 'room_kicked' });
-  leaveRoom(target);
-}
-
 async function handleRoomExtend(peer, msg) {
   if (!peer.roomId) return;
   const room = rooms.get(peer.roomId);
   if (!room) return;
+  if (room.system || room.expiresAt == null) {
+    return peer.send({ type: 'error', code: 'room_no_timer', message: 'Bu odanın süre sınırı yok.' });
+  }
 
   const method = msg.method === 'card' ? 'card' : 'coins';
 
@@ -675,11 +870,11 @@ async function handleRoomExtend(peer, msg) {
   room.broadcast({ type: 'room_extended', expiresAt: room.expiresAt, byName: peer.name, method });
 }
 
-// Sweep expired rooms every 10s.
+// Sweep expired rooms every 10s (system rooms never expire).
 setInterval(() => {
   const now = Date.now();
   for (const room of [...rooms.values()]) {
-    if (room.expiresAt > now) continue;
+    if (room.expiresAt == null || room.expiresAt > now) continue;
     console.log(`[room] ${room.id} expired`);
     for (const m of room.members()) {
       m.send({ type: 'room_expired' });
@@ -701,10 +896,89 @@ function handleRoomMute(peer, msg) {
   room.broadcast({ type: 'room_member_state', peerId: target.id, muted: true }, target.id);
 }
 
+// ── direct friend calls ─────────────────────────────────────────────────────
+// Caller connects a socket and sends call_create → we drop a realtime 'call'
+// notification to the callee (Supabase) → callee's app opens a socket and
+// sends call_join → the two are paired exactly like a match (untimed).
+const CALL_TTL_MS = 45_000;
+/** @type {Map<string, {callerId: string, mode: string, at: number}>} */
+const pendingCalls = new Map();
+
+async function handleCallCreate(peer, msg) {
+  if (!supabase || !peer.userId) {
+    return peer.send({ type: 'error', code: 'not_authed', message: 'Arama için giriş yapmalısın.' });
+  }
+  const toUserId = typeof msg.toUserId === 'string' ? msg.toUserId : null;
+  const mode = msg.mode === 'voice' ? 'voice' : 'video';
+  if (!toUserId) return;
+
+  peer.mode = mode;
+  const callId = crypto.randomBytes(6).toString('hex');
+  pendingCalls.set(callId, { callerId: peer.id, mode, at: Date.now() });
+
+  try {
+    const { error } = await supabase.from('notifications').insert({
+      user_id: toUserId,
+      kind: 'call',
+      title: mode === 'video' ? '📹 Görüntülü arama' : '📞 Sesli arama',
+      body: `${peer.name} seni arıyor`,
+      related_id: peer.userId,
+      payload: { callId, mode, fromName: peer.name, fromId: peer.userId, fromAvatar: peer.avatarUrl },
+    });
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    pendingCalls.delete(callId);
+    console.error(`[call] ring failed: ${e.message}`);
+    return peer.send({ type: 'error', code: 'call_failed', message: 'Arama başlatılamadı.' });
+  }
+
+  peer.send({ type: 'call_ringing', callId });
+  console.log(`[call] ${peer.id.slice(0, 8)} rings ${toUserId.slice(0, 8)} (${mode})`);
+}
+
+function handleCallJoin(peer, msg) {
+  const callId = typeof msg.callId === 'string' ? msg.callId : '';
+  const pending = pendingCalls.get(callId);
+  if (!pending) {
+    return peer.send({ type: 'error', code: 'call_gone', message: 'Arama sonlanmış.' });
+  }
+  const caller = peers.get(pending.callerId);
+  if (!caller || caller.status === 'matched') {
+    pendingCalls.delete(callId);
+    return peer.send({ type: 'error', code: 'call_gone', message: 'Arayan artık müsait değil.' });
+  }
+  pendingCalls.delete(callId);
+  peer.mode = pending.mode;
+  caller.mode = pending.mode;
+  removeFromQueue(caller.id); removeFromQueue(peer.id);
+  leaveRoom(caller); leaveRoom(peer);
+  pair(caller, peer, { timed: false }); // friend calls are not time-boxed
+}
+
+function handleCallCancel(peer, msg) {
+  const callId = typeof msg.callId === 'string' ? msg.callId : '';
+  const pending = pendingCalls.get(callId);
+  if (pending && pending.callerId === peer.id) pendingCalls.delete(callId);
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, c] of pendingCalls) {
+    if (now - c.at > CALL_TTL_MS) {
+      const caller = peers.get(c.callerId);
+      if (caller) caller.send({ type: 'call_timeout' });
+      pendingCalls.delete(id);
+    }
+  }
+}, 5_000);
+
 function handleDisconnect(peer) {
   unpair(peer, 'disconnect');
   removeFromQueue(peer.id);
   leaveRoom(peer);
+  for (const [id, c] of pendingCalls) {
+    if (c.callerId === peer.id) pendingCalls.delete(id);
+  }
   peers.delete(peer.id);
   console.log(`[disconnect] ${peer.id.slice(0, 8)} (active=${peers.size}, queue=${queue.length}, rooms=${rooms.size})`);
 }
@@ -776,9 +1050,13 @@ wss.on('connection', async (ws, req) => {
       case 'room_signal': return handleRoomSignal(peer, msg);
       case 'room_chat':   return handleRoomChat(peer, msg);
       case 'room_state':  return handleRoomState(peer, msg);
-      case 'room_kick':   return handleRoomKick(peer, msg);
       case 'room_mute':   return handleRoomMute(peer, msg);
       case 'room_extend': return await handleRoomExtend(peer, msg);
+      case 'room_like':   return handleRoomLike(peer, msg);
+      case 'call_extend': return await handleCallExtend(peer);
+      case 'call_create': return await handleCallCreate(peer, msg);
+      case 'call_join':   return handleCallJoin(peer, msg);
+      case 'call_cancel': return handleCallCancel(peer, msg);
       default:        return peer.send({ type: 'error', message: 'unknown_type' });
     }
   });
@@ -792,6 +1070,81 @@ setInterval(() => {
     console.log(`[stats] peers=${peers.size} queue=${queue.length} rooms=${rooms.size}`);
   }
 }, 60_000);
+
+// ── FCM push bridge (optional) ──────────────────────────────────────────────
+// Set FIREBASE_SERVICE_ACCOUNT_JSON (the raw service-account JSON) to enable.
+// Listens to new notification rows and pushes them to the user's device.
+let fcmSA = null;
+try {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    fcmSA = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  }
+} catch (e) {
+  console.warn(`[fcm] bad FIREBASE_SERVICE_ACCOUNT_JSON: ${e.message}`);
+}
+
+let fcmToken = null;
+let fcmTokenExp = 0;
+async function fcmAccessToken() {
+  if (fcmToken && Date.now() < fcmTokenExp - 60_000) return fcmToken;
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = jwt.sign({
+    iss: fcmSA.client_email,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now, exp: now + 3600,
+  }, fcmSA.private_key, { algorithm: 'RS256' });
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${assertion}`,
+  });
+  const j = await res.json();
+  if (!j.access_token) throw new Error('fcm token exchange failed');
+  fcmToken = j.access_token;
+  fcmTokenExp = Date.now() + (j.expires_in || 3600) * 1000;
+  return fcmToken;
+}
+
+async function sendFcmPush(deviceToken, title, body, data) {
+  const access = await fcmAccessToken();
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${fcmSA.project_id}/messages:send`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${access}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        token: deviceToken,
+        notification: { title, body: body || '' },
+        data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v ?? '')])),
+      },
+    }),
+  });
+  if (!res.ok) console.warn(`[fcm] send ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
+if (supabase && fcmSA) {
+  supabase
+    .channel('fcm-bridge')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, async (payload) => {
+      try {
+        const n = payload.new;
+        if (!n || !n.user_id) return;
+        const { data } = await supabase.from('profiles').select('fcm_token').eq('id', n.user_id).maybeSingle();
+        const token = data?.fcm_token;
+        if (!token) return;
+        await sendFcmPush(token, n.title, n.body, { kind: n.kind, ...(n.payload || {}) });
+      } catch (e) {
+        console.warn(`[fcm] bridge error: ${e.message}`);
+      }
+    })
+    .subscribe();
+  console.log('[fcm] push bridge active');
+} else {
+  console.log('[fcm] disabled (set FIREBASE_SERVICE_ACCOUNT_JSON to enable)');
+}
+
+ensureSystemRooms();
+setInterval(ensureSystemRooms, 30_000);
 
 httpServer.listen(PORT, HOST, () => {
   console.log(`kerochat signaling on ${HOST}:${PORT} (auth=${supabaseEnabled ? 'on' : 'off'})`);

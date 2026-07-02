@@ -298,25 +298,48 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
               ),
             )),
 
-            // ADMIN tag
-            if (m.isAdmin)
-              Positioned(
-                top: 8, left: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: KC.danger,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
+            // ADMIN / VIP tags
+            Positioned(
+              top: 8, left: 8,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (m.isAdmin)
+                  Container(
+                    margin: const EdgeInsets.only(right: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: KC.danger,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.shield_rounded, size: 10, color: Colors.white),
+                      const SizedBox(width: 3),
+                      Text('ADMIN',
+                          style: kcSora(9, w: FontWeight.w800, color: Colors.white, letter: 0.6)),
+                    ]),
                   ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.shield_rounded, size: 10, color: Colors.white),
-                    const SizedBox(width: 3),
-                    Text('ADMIN',
-                        style: kcSora(9, w: FontWeight.w800, color: Colors.white, letter: 0.6)),
-                  ]),
-                ),
-              ),
+                if (m.isVip)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                          colors: [Color(0xFFF7C948), Color(0xFFE8A33D)]),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+                      boxShadow: [BoxShadow(
+                          color: const Color(0xFFF7C948).withValues(alpha: 0.4),
+                          blurRadius: 10)],
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Text('👑', style: TextStyle(fontSize: 10)),
+                      const SizedBox(width: 3),
+                      Text('VIP',
+                          style: kcSora(9, w: FontWeight.w800,
+                              color: const Color(0xFF3D2E00), letter: 0.6)),
+                    ]),
+                  ),
+              ]),
+            ),
 
             // name + role pill
             Positioned(
@@ -354,16 +377,22 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
     );
   }
 
-  // ── member actions: like/friend, report; owner: mute/kick ────────────────
+  // ── member actions: public like, friend request, report; owner: mute ─────
   void _memberSheet(RoomMember m) {
     final canSocial = m.userId != null;
     showKCSheet(context, title: m.name, builder: (sCtx) {
       return Column(mainAxisSize: MainAxisSize.min, children: [
-        _sheetAction(sCtx, Icons.favorite_rounded, KC.accent, 'Beğen & Arkadaş ol',
-            canSocial ? 'İkiniz de beğenirseniz arkadaş olursunuz' : 'Misafir kullanıcılar beğenilemez',
+        _sheetAction(sCtx, Icons.favorite_rounded, KC.accent, 'Beğen',
+            'Beğenin odadaki herkese görünür ❤️', () {
+          Navigator.pop(sCtx);
+          _rc.likeMember(m.id);
+        }),
+        const SizedBox(height: 8),
+        _sheetAction(sCtx, Icons.person_add_alt_1_rounded, KC.online, 'Arkadaşlık isteği gönder',
+            canSocial ? 'Onaylarsa arkadaş olursunuz' : 'Bu kullanıcıya istek gönderilemez',
             enabled: canSocial, () async {
           Navigator.pop(sCtx);
-          await _likeMember(m);
+          await _sendFriendRequest(m);
         }),
         const SizedBox(height: 8),
         _sheetAction(sCtx, Icons.flag_rounded, KC.warning, 'Şikayet et',
@@ -371,45 +400,38 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
           Navigator.pop(sCtx);
           await _reportMember(m);
         }),
-        if (_rc.isOwner) ...[
-          if (!m.muted) ...[
-            const SizedBox(height: 8),
-            _sheetAction(sCtx, Icons.mic_off_rounded, KC.warning, 'Sustur',
-                'Mikrofonunu kapatır', () {
-              Navigator.pop(sCtx);
-              _rc.muteMember(m.id);
-            }),
-          ],
+        if (_rc.isOwner && !m.muted) ...[
           const SizedBox(height: 8),
-          _sheetAction(sCtx, Icons.logout_rounded, KC.danger, 'Odadan At',
-              'Kullanıcıyı odadan çıkarır', () {
+          _sheetAction(sCtx, Icons.mic_off_rounded, KC.warning, 'Sustur',
+              'Mikrofonunu kapatır', () {
             Navigator.pop(sCtx);
-            _rc.kick(m.id);
+            _rc.muteMember(m.id);
           }),
         ],
       ]);
     });
   }
 
-  Future<void> _likeMember(RoomMember m) async {
+  Future<void> _sendFriendRequest(RoomMember m) async {
     final ctx = KCContext.instance;
     final uid = m.userId;
     if (uid == null) return;
     try {
-      final mutual = await FriendsService.instance.like(uid);
-      ctx.toast(mutual
-          ? '🎉 ${m.name} ile arkadaş oldunuz!'
-          : '💖 Beğendin — karşı taraf da beğenirse arkadaş olursunuz');
+      await FriendsService.instance.sendFriendRequest(uid);
+      ctx.toast('🤝 İstek gönderildi — ${m.name} onaylarsa arkadaş olursunuz');
     } on PostgrestException catch (e) {
-      if (e.message.contains('friend_limit_peer')) {
-        ctx.toast('Karşı tarafın arkadaş listesi dolu (20/20)');
-      } else if (e.message.contains('friend_limit')) {
+      final msg = e.message;
+      if (msg.contains('already_friends')) {
+        ctx.toast('${m.name} ile zaten arkadaşsınız');
+      } else if (msg.contains('request_pending')) {
+        ctx.toast('İsteğin zaten bekliyor');
+      } else if (msg.contains('friend_limit')) {
         ctx.toast('Arkadaş listen dolu (20/20) — VIP yakında 👑');
       } else {
-        ctx.toast('Beğeni gönderilemedi');
+        ctx.toast('İstek gönderilemedi');
       }
     } catch (_) {
-      ctx.toast('Beğeni gönderilemedi');
+      ctx.toast('İstek gönderilemedi');
     }
   }
 
