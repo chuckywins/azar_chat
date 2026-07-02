@@ -55,6 +55,18 @@ function sb_count(string $pathQuery): int {
 
 /* ── Auth (GoTrue password grant + rol kontrolü) ─────────────────────────── */
 
+/** Yerel panel girişi (config.local.php'de ADMIN_PANEL_USER/PASS tanımlıysa). */
+function admin_login_local(string $user, string $pass): bool {
+  if (!ADMIN_PANEL_USER || !ADMIN_PANEL_PASS) return false;
+  if (!hash_equals((string)ADMIN_PANEL_USER, $user)) return false;
+  if (!hash_equals((string)ADMIN_PANEL_PASS, $pass)) return false;
+  $_SESSION['authed'] = true;
+  $_SESSION['uid']  = null;            // audit kayıtlarında actor boş kalır
+  $_SESSION['nick'] = $user;
+  $_SESSION['role'] = 'admin';
+  return true;
+}
+
 function admin_login(string $email, string $password): ?string {
   $ch = curl_init(SUPABASE_URL . '/auth/v1/token?grant_type=password');
   curl_setopt_array($ch, [
@@ -75,6 +87,7 @@ function admin_login(string $email, string $password): ?string {
   if (!$row || !in_array($row['role'], ['admin', 'moderator'], true)) {
     return 'Bu hesabın yönetim yetkisi yok.';
   }
+  $_SESSION['authed'] = true;
   $_SESSION['uid']  = $uid;
   $_SESSION['nick'] = $row['nickname'] ?? $email;
   $_SESSION['role'] = $row['role'];
@@ -82,7 +95,7 @@ function admin_login(string $email, string $password): ?string {
 }
 
 function require_admin(): void {
-  if (empty($_SESSION['uid'])) {
+  if (empty($_SESSION['authed'])) {
     header('Location: login.php');
     exit;
   }

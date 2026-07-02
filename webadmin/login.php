@@ -1,12 +1,21 @@
 <?php
 require_once __DIR__ . '/lib.php';
 
-if (!empty($_SESSION['uid'])) { header('Location: index.php'); exit; }
+if (!empty($_SESSION['authed'])) { header('Location: index.php'); exit; }
 
 $err = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $err = admin_login(trim($_POST['email'] ?? ''), $_POST['password'] ?? '');
-  if ($err === null) { header('Location: index.php'); exit; }
+  $id = trim($_POST['email'] ?? '');
+  $pw = $_POST['password'] ?? '';
+  // 1) yerel panel hesabı (config.local.php: ADMIN_PANEL_USER/PASS)
+  if (admin_login_local($id, $pw)) { header('Location: index.php'); exit; }
+  // 2) Supabase admin/moderatör hesabı (e-posta ile)
+  if (strpos($id, '@') !== false) {
+    $err = admin_login($id, $pw);
+    if ($err === null) { header('Location: index.php'); exit; }
+  } else {
+    $err = 'Kullanıcı adı veya şifre hatalı.';
+  }
 }
 ?>
 <!doctype html><html lang="tr"><head>
@@ -20,9 +29,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <form class="login-card" method="post" autocomplete="off">
     <div class="logo">K</div>
     <h1>kerochat yönetim</h1>
-    <p>Sadece admin / moderatör hesapları girebilir</p>
+    <p>Panel hesabı veya admin rollü Supabase hesabı</p>
     <?php if ($err) echo '<div class="err">' . h($err) . '</div>'; ?>
-    <input type="email" name="email" placeholder="E-posta" required autofocus>
+    <input type="text" name="email" placeholder="Kullanıcı adı veya e-posta" required autofocus>
     <input type="password" name="password" placeholder="Şifre" required>
     <button class="btn" type="submit">Giriş yap</button>
   </form>

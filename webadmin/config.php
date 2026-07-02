@@ -19,5 +19,10 @@ if (!defined('SUPABASE_SERVICE_KEY'))  define('SUPABASE_SERVICE_KEY', 'YOUR_SERV
 // Sinyal sunucusu health endpoint'i (canlı peer/oda sayıları için)
 if (!defined('SIGNALING_HEALTH_URL'))  define('SIGNALING_HEALTH_URL', 'https://ws.klslog.com/health');
 
+// Panel yerel girişi (config.local.php'de tanımlanırsa aktif olur).
+// Tanımlı değilse giriş Supabase (admin rollü hesap) üzerinden yapılır.
+if (!defined('ADMIN_PANEL_USER')) define('ADMIN_PANEL_USER', null);
+if (!defined('ADMIN_PANEL_PASS')) define('ADMIN_PANEL_PASS', null);
+
 session_name('kerochat_admin');
 session_start();
