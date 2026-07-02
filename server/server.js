@@ -75,6 +75,9 @@ const VOICE_EXT_VIP_MS = 240_000;
 // System-generated rooms: the server keeps a pool of small open rooms alive.
 const SYSTEM_ROOM_MIN_OPEN = 5;    // always at least this many joinable system rooms
 const SYSTEM_ROOM_MAX      = 40;   // runaway guard
+// System room lifetime: 3min 20s — countdown starts when the FIRST member
+// joins (empty pool rooms don't tick); expired rooms close, the pool restocks.
+const SYSTEM_ROOM_MS       = 200_000;
 const SYSTEM_TOPICS = [
   ['Tanışalım', 'Tanışma'], ['Şarkını Söyle', 'Müzik'], ['Dertleşelim', 'Dertleşme'],
   ['İtiraf Saati', 'İtiraf'], ['Gece Sohbeti', 'Sohbet'], ['English Time', 'English'],
@@ -659,10 +662,14 @@ function leaveRoom(peer, { silent = false } = {}) {
   const ix = room.memberIds.indexOf(peer.id);
   if (ix >= 0) room.memberIds.splice(ix, 1);
 
-  if (room.memberIds.length === 0 && !room.system) {
-    rooms.delete(room.id);
-    console.log(`[room] ${room.id} closed (empty)`);
-    return;
+  if (room.memberIds.length === 0) {
+    if (!room.system) {
+      rooms.delete(room.id);
+      console.log(`[room] ${room.id} closed (empty)`);
+      return;
+    }
+    // Empty system room: stop the countdown so the next group gets a full 3:20.
+    room.expiresAt = null;
   }
 
   // Owner succession (VIP rooms only): oldest remaining member takes over.
@@ -766,6 +773,10 @@ async function handleRoomJoin(peer, msg) {
   // Tell existing members BEFORE adding, so the list they hold stays consistent.
   room.broadcast({ type: 'room_peer_joined', member: room.memberInfo(peer) });
   room.memberIds.push(peer.id);
+  // System room countdown starts with the first occupant.
+  if (room.system && room.memberIds.length === 1) {
+    room.expiresAt = Date.now() + SYSTEM_ROOM_MS;
+  }
   ensureSystemRooms(); // room may be full now — keep the open pool stocked
 
   console.log(`[room] ${room.id} join ${peer.id.slice(0, 8)} (${room.memberIds.length}/${room.cap})`);
@@ -835,8 +846,8 @@ async function handleRoomExtend(peer, msg) {
   if (!peer.roomId) return;
   const room = rooms.get(peer.roomId);
   if (!room) return;
-  if (room.system || room.expiresAt == null) {
-    return peer.send({ type: 'error', code: 'room_no_timer', message: 'Bu odanın süre sınırı yok.' });
+  if (room.expiresAt == null) {
+    return peer.send({ type: 'error', code: 'room_no_timer', message: 'Bu odanın süre sayacı henüz başlamadı.' });
   }
 
   const method = msg.method === 'card' ? 'card' : 'coins';
@@ -870,19 +881,22 @@ async function handleRoomExtend(peer, msg) {
   room.broadcast({ type: 'room_extended', expiresAt: room.expiresAt, byName: peer.name, method });
 }
 
-// Sweep expired rooms every 10s (system rooms never expire).
+// Sweep expired rooms every 10s (empty system rooms have no ticking timer).
 setInterval(() => {
   const now = Date.now();
+  let closedAny = false;
   for (const room of [...rooms.values()]) {
     if (room.expiresAt == null || room.expiresAt > now) continue;
-    console.log(`[room] ${room.id} expired`);
+    console.log(`[room] ${room.id} expired${room.system ? ' (system)' : ''}`);
     for (const m of room.members()) {
       m.send({ type: 'room_expired' });
       m.roomId = null;
       m.muted = false;
     }
     rooms.delete(room.id);
+    closedAny = true;
   }
+  if (closedAny) ensureSystemRooms();
 }, 10_000);
 
 function handleRoomMute(peer, msg) {
