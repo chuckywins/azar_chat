@@ -1,19 +1,38 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FriendInfo {
-  FriendInfo({required this.userId, this.nickname, this.gender, this.trustScore, this.becameAt});
+  FriendInfo({required this.userId, this.nickname, this.gender, this.avatarUrl,
+      this.trustScore, this.becameAt, this.isOnline = false, this.lastSeenAt});
   final String userId;
   final String? nickname;
   final String? gender;
+  final String? avatarUrl;
   final int? trustScore;
   final DateTime? becameAt;
+  final bool isOnline;
+  final DateTime? lastSeenAt;
+
+  /// "Çevrimiçi" or "son görülme: X" label.
+  String get presenceLabel {
+    if (isOnline) return 'Çevrimiçi';
+    final t = lastSeenAt;
+    if (t == null) return 'Çevrimdışı';
+    final d = DateTime.now().difference(t);
+    if (d.inMinutes < 60) return '${d.inMinutes} dk önce';
+    if (d.inHours < 24) return '${d.inHours} sa önce';
+    if (d.inDays < 7) return '${d.inDays} gün önce';
+    return 'Uzun süredir yok';
+  }
 
   factory FriendInfo.fromJson(Map<String, dynamic> j) => FriendInfo(
         userId: j['user_id'] as String,
         nickname: j['nickname'] as String?,
         gender: j['gender'] as String?,
+        avatarUrl: j['avatar_url'] as String?,
         trustScore: (j['trust_score'] as num?)?.toInt(),
         becameAt: j['became_friends_at'] == null ? null : DateTime.tryParse(j['became_friends_at'] as String),
+        isOnline: j['is_online'] == true,
+        lastSeenAt: j['last_seen_at'] == null ? null : DateTime.tryParse(j['last_seen_at'] as String),
       );
 }
 

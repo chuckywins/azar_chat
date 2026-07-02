@@ -169,14 +169,24 @@ class _KCChatsState extends State<KCChats> {
             itemBuilder: (_, i) {
               final f = list[i];
               final u = kcUserFromConversationRow(
-                  peerId: f.userId, nickname: f.nickname, gender: f.gender);
+                  peerId: f.userId, nickname: f.nickname, gender: f.gender,
+                  avatarUrl: f.avatarUrl);
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
                 child: Row(children: [
-                  KCAvatar(user: u, size: 48),
+                  KCAvatar(user: u, size: 48, online: f.isOnline),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(u.name, overflow: TextOverflow.ellipsis,
-                      style: kcSora(15, w: FontWeight.w700))),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(u.name, overflow: TextOverflow.ellipsis,
+                          style: kcSora(15, w: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(f.presenceLabel,
+                          style: kcManrope(11.5, w: FontWeight.w600,
+                              color: f.isOnline ? KC.online : KC.muted)),
+                    ],
+                  )),
                   _friendBtn(Icons.chat_bubble_outline_rounded, KC.muted, () {
                     KCContext.instance.setChatUser(u);
                     KCContext.instance.setScreen('thread');

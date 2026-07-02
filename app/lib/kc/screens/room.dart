@@ -585,18 +585,30 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
                   textAlign: TextAlign.center, style: kcManrope(13, color: KC.muted))),
             );
           }
+          // çevrimiçi arkadaşlar önce (my_friends zaten öyle sıralar, garantiye al)
+          final sorted = [...friends]..sort((a, b) =>
+              (b.isOnline ? 1 : 0).compareTo(a.isOnline ? 1 : 0));
           return Column(
             mainAxisSize: MainAxisSize.min,
-            children: friends.take(20).map((f) {
+            children: sorted.take(20).map((f) {
               final user = kcUserFromConversationRow(
-                  peerId: f.userId, nickname: f.nickname, gender: f.gender);
+                  peerId: f.userId, nickname: f.nickname, gender: f.gender,
+                  avatarUrl: f.avatarUrl);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(children: [
-                  KCAvatar(user: user, size: 40),
+                  KCAvatar(user: user, size: 40, online: f.isOnline),
                   const SizedBox(width: 11),
-                  Expanded(child: Text(user.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: kcManrope(14.5, w: FontWeight.w700))),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(user.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: kcManrope(14.5, w: FontWeight.w700)),
+                      Text(f.presenceLabel,
+                          style: kcManrope(10.5, w: FontWeight.w600,
+                              color: f.isOnline ? KC.online : KC.muted)),
+                    ],
+                  )),
                   GestureDetector(
                     onTap: () async {
                       try {
