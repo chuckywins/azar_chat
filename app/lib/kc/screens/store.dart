@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../services/ads_service.dart';
 import '../../services/coin_service.dart';
 import '../../services/vip_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
+import '../referral_sheet.dart';
 import '../tokens.dart';
 
 class KCStore extends StatefulWidget {
@@ -33,6 +35,27 @@ class _KCStoreState extends State<KCStore> {
       if (mounted) setState(() => _vip = v);
     });
     _loadPacks();
+  }
+
+  /// Ödüllü reklam akışı: durum → reklam (şimdilik simülasyon) → ödül.
+  Future<void> _watchAd(BuildContext context) async {
+    final ctx = KCContext.instance;
+    try {
+      final st = await AdsService.instance.status();
+      if (st.remaining <= 0) {
+        ctx.toast('Bugünkü reklam hakkın bitti — yarın ${st.limit} hakkın daha var 🌙');
+        return;
+      }
+      if (!context.mounted) return;
+      final coins = await AdsService.instance.watchAndClaim(context);
+      if (coins != null) {
+        ctx.toast('💎 +$coins elmas kazandın! (bugün kalan: ${st.remaining - 1})');
+      }
+    } catch (e) {
+      ctx.toast(e.toString().contains('ad_limit')
+          ? 'Bugünkü reklam hakkın bitti'
+          : 'Reklam şu an yüklenemedi');
+    }
   }
 
   Future<void> _loadPacks() async {
@@ -256,10 +279,10 @@ class _KCStoreState extends State<KCStore> {
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Column(children: [
-                  _earnRow(Icons.group_add_rounded, KC.online, 'Arkadaşını davet et', '+50',
-                      () => ctx.toast('Davet linkin profilinde')),
-                  _earnRow(Icons.bolt_rounded, KC.warning, 'Reklam izle', '+10',
-                      () => ctx.toast('Reklamlar yakında'), last: true),
+                  _earnRow(Icons.group_add_rounded, KC.online, 'Arkadaşını davet et', '+20',
+                      () => showReferralSheet(context)),
+                  _earnRow(Icons.ondemand_video_rounded, KC.warning, 'Reklam izle', '+5',
+                      () => _watchAd(context), last: true),
                 ]),
               ),
             ),

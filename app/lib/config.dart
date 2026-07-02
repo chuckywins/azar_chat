@@ -20,4 +20,9 @@ class AppConfig {
   }
 
   static bool get hasSupabase => supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+
+  /// Public web URL — referral links are built on this.
+  static const String _envWebUrl = String.fromEnvironment('APP_WEB_URL');
+  static String get webUrl =>
+      _envWebUrl.isNotEmpty ? _envWebUrl : 'https://chat.asicservices.com';
 }

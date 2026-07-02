@@ -11,6 +11,8 @@ class Profile {
     this.banReason,
     this.nicknameChanges = 0,
     this.adultConfirmedAt,
+    this.referralCode,
+    this.referredBy,
   });
 
   final String id;
@@ -24,6 +26,8 @@ class Profile {
   final String? banReason;
   final int nicknameChanges; // used rights (max 2)
   final DateTime? adultConfirmedAt; // 18+ onayı (store politikaları)
+  final String? referralCode;       // davet linki kodu
+  final String? referredBy;         // beni davet edenin uid'i
 
   bool get isAdult => adultConfirmedAt != null;
   bool get isAdmin => role == 'admin';
@@ -44,5 +48,7 @@ class Profile {
         adultConfirmedAt: j['adult_confirmed_at'] == null
             ? null
             : DateTime.tryParse(j['adult_confirmed_at'] as String),
+        referralCode: j['referral_code'] as String?,
+        referredBy: j['referred_by'] as String?,
       );
 }

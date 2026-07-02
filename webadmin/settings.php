@@ -79,6 +79,12 @@ $groups = [
     'friend_limit'         => 'Maksimum arkadaş sayısı',
     'nickname_max_changes' => 'Kullanıcı adı değiştirme hakkı',
   ],
+  'Kazanç (Referans & Reklam)' => [
+    'referral_bonus_inviter'  => 'Davet eden: kayıt başına elmas',
+    'referral_bonus_referred' => 'Davetle gelen: elmas',
+    'ad_daily_limit'          => 'Günlük reklam izleme hakkı',
+    'ad_reward_coins'         => 'Reklam başına elmas',
+  ],
 ];
 $byKey = [];
 foreach ($settings as $s) $byKey[$s['key']] = $s;

@@ -178,6 +178,9 @@ class KCContext extends ChangeNotifier {
   Map<String, dynamic>? incomingCall;
   Timer? _incomingTimer;
 
+  /// ?ref=KOD ile gelindiyse kayıt sonrası otomatik uygulanacak kod.
+  String? pendingRefCode;
+
   Future<void> acceptIncomingCall() async {
     final call = incomingCall;
     incomingCall = null;

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../auth/auth_controller.dart';
 import 'anim.dart';
 import 'atoms.dart';
 import 'kc_context.dart';
+import 'referral_sheet.dart';
 import 'screens/chats.dart';
 import 'screens/home.dart';
 import 'screens/matching.dart';
@@ -46,16 +48,33 @@ class KCApp extends StatefulWidget {
 
 class _KCAppState extends State<KCApp> {
   final _ctx = KCContext.instance;
+  bool _refTried = false;
 
   @override
   void initState() {
     super.initState();
     _ctx.addListener(_onChange);
+    AuthController.instance.addListener(_maybeApplyReferral);
+    _maybeApplyReferral();
+  }
+
+  /// ?ref= ile gelindiyse, profil yüklendiğinde kodu bir kez uygula.
+  void _maybeApplyReferral() {
+    if (_refTried) return;
+    final code = _ctx.pendingRefCode;
+    final p = AuthController.instance.profile;
+    if (code == null || p == null) return;
+    _refTried = true;
+    _ctx.pendingRefCode = null;
+    if (p.referredBy == null) {
+      applyReferralCode(code);
+    }
   }
 
   @override
   void dispose() {
     _ctx.removeListener(_onChange);
+    AuthController.instance.removeListener(_maybeApplyReferral);
     super.dispose();
   }
 

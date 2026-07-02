@@ -10,6 +10,7 @@ import '../../services/vip_service.dart';
 import '../atoms.dart';
 import '../kc_context.dart';
 import '../real_data.dart';
+import '../referral_sheet.dart';
 import '../tokens.dart';
 import 'blocks.dart';
 
@@ -261,29 +262,33 @@ class _KCProfileState extends State<KCProfile> {
           const SizedBox(height: 16),
 
           // ── referral
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: KC.surface, borderRadius: BorderRadius.circular(KC.radiusLg),
-              border: Border.all(color: KC.border),
-            ),
-            child: Row(children: [
-              Container(width: 38, height: 38,
-                decoration: BoxDecoration(color: KC.online.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
-                alignment: Alignment.center,
-                child: const Icon(Icons.group_add_rounded, color: KC.online, size: 18)),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Davet', style: kcSora(14.5, w: FontWeight.w700)),
-                    Text('${_refStats['invited']} davet · ${_refStats['active']} aktif',
-                        style: kcManrope(12.5, color: KC.muted)),
-                  ],
-                ),
+          GestureDetector(
+            onTap: () => showReferralSheet(context),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: KC.surface, borderRadius: BorderRadius.circular(KC.radiusLg),
+                border: Border.all(color: KC.border),
               ),
-            ]),
+              child: Row(children: [
+                Container(width: 38, height: 38,
+                  decoration: BoxDecoration(color: KC.online.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.group_add_rounded, color: KC.online, size: 18)),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Davet linkim', style: kcSora(14.5, w: FontWeight.w700)),
+                      Text('${_refStats['invited']} davet · ${_refStats['active']} aktif · kişi başı elmas kazan',
+                          style: kcManrope(12.5, color: KC.muted)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: KC.muted, size: 18),
+              ]),
+            ),
           ),
           const SizedBox(height: 14),
 

@@ -11,6 +11,13 @@ import 'services/presence_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Referans linkiyle geliş (web): https://.../?ref=KOD — kayıt sonrası işlenir.
+  try {
+    final ref = Uri.base.queryParameters['ref'];
+    if (ref != null && ref.trim().isNotEmpty) {
+      KCContext.instance.pendingRefCode = ref.trim();
+    }
+  } catch (_) {/* mobilde Uri.base anlamsız olabilir */}
   await AuthController.instance.bootstrap();
   // Start presence heartbeat whenever auth state becomes "signed in".
   AuthController.instance.addListener(() {
