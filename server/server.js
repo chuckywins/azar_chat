@@ -1007,29 +1007,15 @@ wss.on('connection', async (ws, req) => {
   const peer = new Peer(ws);
   peers.set(peer.id, peer);
 
-  // Capture client environment up-front (used for ban-evasion + geo).
-  peer.ip = normalizeIp(getClientIp(req));
-  peer.ua = (req.headers['user-agent'] || '').slice(0, 300) || null;
-  peer.country = await geoLookup(peer.ip);
+  // Attach the message listener IMMEDIATELY — async init below (geo, JWT,
+  // profile fetch) takes 100ms+; clients send hello/room_list right after the
+  // socket opens and those frames would otherwise be emitted with no listener
+  // and silently lost. Until init completes we buffer, then replay in order.
+  let ready = false;
+  /** @type {any[]} */
+  const backlog = [];
 
-  // Try to extract token from connect URL.
-  try {
-    const url = new URL(req.url, 'http://x');
-    const token = url.searchParams.get('token');
-    if (token) {
-      const v = await verifyToken(token);
-      if (v) {
-        peer.userId = v.sub;
-        await fetchSignalingProfile(peer);
-      }
-    }
-  } catch (_) {/* ignore */}
-
-  console.log(`[connect] ${peer.id.slice(0, 8)} user=${peer.userId?.slice(0,8) || 'guest'} ip=${peer.ip} country=${peer.country || '?'} (active=${peers.size})`);
-
-  peer.send({ type: 'welcome', selfId: peer.id, iceServers: ICE_SERVERS });
-
-  ws.on('message', async (raw) => {
+  const handleMessage = async (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); }
     catch { return peer.send({ type: 'error', message: 'bad_json' }); }
@@ -1059,10 +1045,40 @@ wss.on('connection', async (ws, req) => {
       case 'call_cancel': return handleCallCancel(peer, msg);
       default:        return peer.send({ type: 'error', message: 'unknown_type' });
     }
-  });
+  };
 
+  ws.on('message', (raw) => {
+    if (!ready) { backlog.push(raw); return; }
+    handleMessage(raw);
+  });
   ws.on('close', () => handleDisconnect(peer));
   ws.on('error', (err) => console.error(`[ws-error] ${peer.id.slice(0, 8)}:`, err.message));
+
+  // ── async init (geo + JWT + profile) — messages buffered meanwhile ────────
+  peer.ip = normalizeIp(getClientIp(req));
+  peer.ua = (req.headers['user-agent'] || '').slice(0, 300) || null;
+  peer.country = await geoLookup(peer.ip);
+
+  try {
+    const url = new URL(req.url, 'http://x');
+    const token = url.searchParams.get('token');
+    if (token) {
+      const v = await verifyToken(token);
+      if (v) {
+        peer.userId = v.sub;
+        await fetchSignalingProfile(peer);
+      }
+    }
+  } catch (_) {/* ignore */}
+
+  console.log(`[connect] ${peer.id.slice(0, 8)} user=${peer.userId?.slice(0,8) || 'guest'} ip=${peer.ip} country=${peer.country || '?'} (active=${peers.size})`);
+
+  peer.send({ type: 'welcome', selfId: peer.id, iceServers: ICE_SERVERS });
+
+  ready = true;
+  for (const raw of backlog.splice(0)) {
+    await handleMessage(raw);
+  }
 });
 
 setInterval(() => {
