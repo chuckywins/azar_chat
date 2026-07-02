@@ -175,6 +175,15 @@ class KCContext extends ChangeNotifier {
     await roomsCtl.close();
   }
 
+  /// Deep entry: open the rooms area and join a specific room (e.g. from a
+  /// room-invite notification).
+  Future<void> joinRoomById(String roomId) async {
+    await openRooms();
+    if (roomsCtl.phase == RoomPhase.list) {
+      await roomsCtl.joinRoom(roomId);
+    }
+  }
+
   void _onRoomsChange() {
     switch (roomsCtl.phase) {
       case RoomPhase.inRoom:
@@ -248,7 +257,8 @@ class KCContext extends ChangeNotifier {
         final realId = app.peerUserId ?? app.peerId;
         final pname = app.peerName ?? 'Yabancı';
         if (realId != null) {
-          partner = kcUserFromConversationRow(peerId: realId, nickname: pname);
+          partner = kcUserFromConversationRow(
+              peerId: realId, nickname: pname, avatarUrl: app.peerAvatarUrl);
         }
         // Start subscribing to incoming gifts for the local user.
         _subscribeIncomingGifts();

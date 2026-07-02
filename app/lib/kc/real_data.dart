@@ -19,6 +19,7 @@ KCUser kcUserFromProfile(Profile p, {String? country, bool verified = false}) {
     c2: colors.$2,
     verified: verified,
     lang: 'Türkçe',
+    avatarUrl: p.avatarUrl,
   );
 }
 
@@ -27,6 +28,7 @@ KCUser kcUserFromConversationRow({
   String? nickname,
   String? gender,
   String? country,
+  String? avatarUrl,
 }) {
   final colors = _gradientForSeed(peerId);
   return KCUser(
@@ -38,6 +40,7 @@ KCUser kcUserFromConversationRow({
     c1: colors.$1, c2: colors.$2,
     verified: false,
     lang: 'Türkçe',
+    avatarUrl: avatarUrl,
   );
 }
 

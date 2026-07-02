@@ -49,6 +49,20 @@ class FriendsService {
     return rows.cast<Map<String, dynamic>>().map(FriendInfo.fromJson).toList();
   }
 
+  /// Invite a friend to a voice room (server verifies the friendship and
+  /// rate-limits; delivered as a 'room_invite' notification).
+  Future<void> inviteToRoom({
+    required String friendId,
+    required String roomId,
+    required String roomTitle,
+  }) async {
+    await _c.rpc('invite_to_room', params: {
+      'p_friend_id': friendId,
+      'p_room_id': roomId,
+      'p_room_title': roomTitle,
+    });
+  }
+
   Future<int?> trustScoreOf(String userId) async {
     final res = await _c.rpc('get_trust_score', params: {'uid': userId});
     if (res is num) return res.toInt();

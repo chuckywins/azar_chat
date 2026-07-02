@@ -264,7 +264,8 @@ class _KCRoomsScreenState extends State<KCRoomsScreen> {
   }
 
   Widget _filledSlot(RoomPreviewMember m, {int showExtra = 0}) {
-    final user = kcUserFromConversationRow(peerId: m.userId ?? m.id, nickname: m.name);
+    final user = kcUserFromConversationRow(
+        peerId: m.userId ?? m.id, nickname: m.name, avatarUrl: m.avatarUrl);
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: Stack(

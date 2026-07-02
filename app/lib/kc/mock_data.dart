@@ -11,6 +11,7 @@ class KCUser {
   final Color c2;
   final bool verified;
   final String lang;
+  final String? avatarUrl;   // DiceBear vb. — null ise monogram gösterilir
 
   const KCUser({
     required this.id,
@@ -23,6 +24,7 @@ class KCUser {
     required this.c2,
     required this.verified,
     required this.lang,
+    this.avatarUrl,
   });
 }
 

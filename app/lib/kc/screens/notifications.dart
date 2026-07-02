@@ -52,6 +52,7 @@ class _KCNotificationsState extends State<KCNotifications> {
       case 'coin':    return Icons.diamond_rounded;
       case 'vip':     return Icons.workspace_premium_rounded;
       case 'admin':   return Icons.shield_outlined;
+      case 'room_invite': return Icons.graphic_eq_rounded;
       default:        return Icons.notifications_rounded;
     }
   }
@@ -65,6 +66,7 @@ class _KCNotificationsState extends State<KCNotifications> {
       case 'coin':    return const Color(0xFFFFD460);
       case 'vip':     return KC.accent;
       case 'admin':   return KC.verify;
+      case 'room_invite': return KC.online;
       default:        return KC.muted;
     }
   }
@@ -145,7 +147,22 @@ class _KCNotificationsState extends State<KCNotifications> {
                         ],
                       ])),
                       const SizedBox(width: 8),
-                      Text(_rel(n.createdAt), style: kcManrope(11, color: KC.muted)),
+                      if (n.kind == 'room_invite' && n.roomId != null)
+                        GestureDetector(
+                          onTap: () => ctx.joinRoomById(n.roomId!),
+                          child: Container(
+                            height: 32,
+                            padding: const EdgeInsets.symmetric(horizontal: 13),
+                            decoration: const BoxDecoration(
+                              gradient: KC.grad,
+                              borderRadius: BorderRadius.all(Radius.circular(999)),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text('Katıl', style: kcSora(12, w: FontWeight.w700, color: Colors.white)),
+                          ),
+                        )
+                      else
+                        Text(_rel(n.createdAt), style: kcManrope(11, color: KC.muted)),
                     ]),
                   );
                 },

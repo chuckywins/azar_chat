@@ -11,10 +11,11 @@ import '../webrtc/media.dart';
 import '../webrtc/peer.dart';
 
 class RoomPreviewMember {
-  RoomPreviewMember({required this.id, this.userId, required this.name});
+  RoomPreviewMember({required this.id, this.userId, required this.name, this.avatarUrl});
   final String id;
   final String? userId;
   final String name;
+  final String? avatarUrl;
 }
 
 class RoomInfo {
@@ -51,6 +52,7 @@ class RoomInfo {
                   id: (e['id'] as String?) ?? '',
                   userId: e['userId'] as String?,
                   name: (e['name'] as String?) ?? 'Misafir',
+                  avatarUrl: e['avatarUrl'] as String?,
                 ))
             .toList(),
       );
@@ -66,6 +68,7 @@ class RoomMember {
     required this.muted,
     required this.isOwner,
     this.isAdmin = false,
+    this.avatarUrl,
   });
 
   final String id;       // ephemeral socket id
@@ -76,6 +79,7 @@ class RoomMember {
   bool muted;
   bool isOwner;
   final bool isAdmin;    // platform admin — shown with a tag in rooms
+  final String? avatarUrl;
 
   static RoomMember fromJson(Map<String, dynamic> j) => RoomMember(
         id: j['id'] as String,
@@ -86,6 +90,7 @@ class RoomMember {
         muted: j['muted'] == true,
         isOwner: j['isOwner'] == true,
         isAdmin: j['isAdmin'] == true,
+        avatarUrl: j['avatarUrl'] as String?,
       );
 }
 

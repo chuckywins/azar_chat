@@ -15,6 +15,7 @@ import 'gifts_tab.dart';
 import 'live_stats_service.dart';
 import 'photos_tab.dart';
 import 'user_detail_screen.dart';
+import 'wheel_tab.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -23,7 +24,7 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 10, vsync: this);
+  late final TabController _tabs = TabController(length: 11, vsync: this);
 
   @override
   void dispose() { _tabs.dispose(); super.dispose(); }
@@ -104,6 +105,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     Tab(text: 'DUYURULAR'),
                     Tab(text: 'HEDİYELER'),
                     Tab(text: 'PAKETLER'),
+                    Tab(text: 'ÇARK'),
                     Tab(text: 'FOTOĞRAFLAR'),
                     Tab(text: 'AUDIT'),
                   ],
@@ -122,6 +124,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     AnnouncementsTab(),
                     GiftsTab(),
                     CoinPacksTab(),
+                    WheelTab(),
                     PhotosTab(),
                     AuditTab(),
                   ],

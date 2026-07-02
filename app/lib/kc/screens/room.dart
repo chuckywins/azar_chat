@@ -188,6 +188,12 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
                     ),
                     const SizedBox(width: 14),
                     _dockBtn(
+                      icon: Icons.person_add_alt_1_rounded,
+                      label: 'Davet',
+                      onTap: () => _inviteSheet(context),
+                    ),
+                    const SizedBox(width: 14),
+                    _dockBtn(
                       icon: Icons.more_time_rounded,
                       label: 'Uzat',
                       onTap: () => _extendSheet(context),
@@ -260,6 +266,7 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
       nickname: m.name,
       gender: m.gender,
       country: m.country,
+      avatarUrl: m.avatarUrl,
     );
     final speaking = !m.muted;
 
@@ -533,6 +540,76 @@ class _KCRoomScreenState extends State<KCRoomScreen> {
     }).whenComplete(() {
       _rc.removeListener(onCtl);
       _rc.setChatOpen(false);
+    });
+  }
+
+  // ── invite friends to this room ───────────────────────────────────────────
+  void _inviteSheet(BuildContext context) {
+    final room = _rc.room;
+    if (room == null) return;
+    showKCSheet(context, title: 'Arkadaşını davet et 🎙', builder: (sCtx) {
+      return FutureBuilder(
+        future: FriendsService.instance.myFriends(),
+        builder: (fCtx, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Padding(padding: EdgeInsets.all(30),
+                child: Center(child: CircularProgressIndicator(color: KC.accent, strokeWidth: 2.4)));
+          }
+          final friends = snap.data ?? const <FriendInfo>[];
+          if (friends.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: Text('Henüz arkadaşın yok —\neşleşmelerde 💖 ile arkadaş edin!',
+                  textAlign: TextAlign.center, style: kcManrope(13, color: KC.muted))),
+            );
+          }
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: friends.take(20).map((f) {
+              final user = kcUserFromConversationRow(
+                  peerId: f.userId, nickname: f.nickname, gender: f.gender);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(children: [
+                  KCAvatar(user: user, size: 40),
+                  const SizedBox(width: 11),
+                  Expanded(child: Text(user.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: kcManrope(14.5, w: FontWeight.w700))),
+                  GestureDetector(
+                    onTap: () async {
+                      try {
+                        await FriendsService.instance.inviteToRoom(
+                          friendId: f.userId, roomId: room.id, roomTitle: room.title,
+                        );
+                        KCContext.instance.toast('📨 ${user.name} davet edildi');
+                      } catch (e) {
+                        final msg = e.toString();
+                        KCContext.instance.toast(
+                          msg.contains('invite_too_soon')
+                              ? 'Bu kişiye az önce davet gönderdin'
+                              : msg.contains('not_friends')
+                                  ? 'Sadece arkadaşlar davet edilebilir'
+                                  : 'Davet gönderilemedi',
+                        );
+                      }
+                    },
+                    child: Container(
+                      height: 34,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: const BoxDecoration(
+                        gradient: KC.grad,
+                        borderRadius: BorderRadius.all(Radius.circular(999)),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text('Davet et', style: kcSora(12, w: FontWeight.w700, color: Colors.white)),
+                    ),
+                  ),
+                ]),
+              );
+            }).toList(),
+          );
+        },
+      );
     });
   }
 

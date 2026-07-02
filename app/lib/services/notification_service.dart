@@ -2,16 +2,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InAppNotification {
   InAppNotification({required this.id, required this.kind, required this.title,
-    this.body, this.relatedId, this.readAt, required this.createdAt});
+    this.body, this.relatedId, this.payload, this.readAt, required this.createdAt});
   final String id;
-  final String kind;          // like|match|message|gift|system|admin|vip|coin
+  final String kind;          // like|match|message|gift|system|admin|vip|coin|room_invite
   final String title;
   final String? body;
   final String? relatedId;
+  final Map<String, dynamic>? payload; // e.g. {roomId, roomTitle} for room_invite
   final DateTime? readAt;
   final DateTime createdAt;
 
   bool get unread => readAt == null;
+  String? get roomId => payload?['roomId'] as String?;
 
   factory InAppNotification.fromJson(Map<String, dynamic> j) => InAppNotification(
         id: j['id'] as String,
@@ -19,6 +21,7 @@ class InAppNotification {
         title: j['title'] as String,
         body: j['body'] as String?,
         relatedId: j['related_id'] as String?,
+        payload: (j['payload'] as Map?)?.cast<String, dynamic>(),
         readAt: j['read_at'] == null ? null : DateTime.tryParse(j['read_at'] as String),
         createdAt: DateTime.parse(j['created_at'] as String),
       );

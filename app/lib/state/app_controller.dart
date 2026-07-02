@@ -68,6 +68,7 @@ class AppController extends ChangeNotifier {
   String? peerName;
   String? peerCountry;
   String? peerGenderInfo;
+  String? peerAvatarUrl;
   DateTime? matchedAt;
   String? errorMessage;
 
@@ -205,6 +206,7 @@ class AppController extends ChangeNotifier {
     peerName = info?['name'] as String? ?? 'Yabancı';
     peerCountry = info?['country'] as String?;
     peerGenderInfo = info?['gender'] as String?;
+    peerAvatarUrl = info?['avatarUrl'] as String?;
     _peerUserId = info?['userId'] as String?;
     matchTopic = msg['topic'] as String?;
     matchedAt = DateTime.now();
@@ -315,6 +317,7 @@ class AppController extends ChangeNotifier {
     peerName = null;
     peerCountry = null;
     peerGenderInfo = null;
+    peerAvatarUrl = null;
     _peerUserId = null;
     matchTopic = null;
     remoteRenderer.srcObject = null;

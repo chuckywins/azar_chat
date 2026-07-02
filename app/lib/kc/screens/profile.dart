@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../admin/admin_screen.dart';
 import '../../auth/auth_controller.dart';
@@ -93,7 +94,27 @@ class _KCProfileState extends State<KCProfile> {
             ),
             child: Column(
               children: [
-                KCAvatar(user: me, size: 88, ring: true),
+                GestureDetector(
+                  onTap: () => _avatarSheet(context),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      KCAvatar(user: me, size: 88, ring: true),
+                      Positioned(
+                        right: -2, bottom: -2,
+                        child: Container(
+                          width: 28, height: 28,
+                          decoration: BoxDecoration(
+                            gradient: KC.grad, shape: BoxShape.circle,
+                            border: Border.all(color: KC.bg, width: 2.5),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.edit_rounded, color: Colors.white, size: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -312,6 +333,116 @@ class _KCProfileState extends State<KCProfile> {
         ],
       ),
     );
+  }
+
+  // DiceBear (ücretsiz, açık kaynak) çizgi avatar galerisi — seed = uid + varyant.
+  static const _avatarStyles = <(String, String)>[
+    ('adventurer', 'Macera'),
+    ('fun-emoji',  'Emoji'),
+    ('bottts',     'Robot'),
+    ('lorelei',    'Çizgi'),
+    ('open-peeps', 'Karakter'),
+  ];
+
+  String _dicebearUrl(String style, String seed) =>
+      'https://api.dicebear.com/9.x/$style/png?seed=${Uri.encodeComponent(seed)}&size=128';
+
+  void _avatarSheet(BuildContext context) {
+    final uid = AuthController.instance.userId ?? 'guest';
+    String style = _avatarStyles.first.$1;
+    showKCSheet(context, title: 'Avatarını seç 🎭', builder: (sCtx) {
+      return StatefulBuilder(builder: (sCtx2, setSheet) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 38,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: _avatarStyles.map((s) {
+                  final on = style == s.$1;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => setSheet(() => style = s.$1),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: on ? KC.accentSoft : KC.surface2,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: on ? KC.accent : KC.border),
+                        ),
+                        child: Text(s.$2, style: kcManrope(13, w: FontWeight.w700,
+                            color: on ? KC.accent : KC.text)),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: 12,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4, crossAxisSpacing: 10, mainAxisSpacing: 10,
+              ),
+              itemBuilder: (_, i) {
+                final url = _dicebearUrl(style, '$uid-$i');
+                return GestureDetector(
+                  onTap: () async {
+                    Navigator.pop(sCtx);
+                    await _saveAvatar(url);
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: KC.surface2, shape: BoxShape.circle,
+                      border: Border.all(color: KC.border),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.network(url, fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) =>
+                            const Icon(Icons.person_rounded, color: KC.muted)),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: TextButton(
+                onPressed: () async {
+                  Navigator.pop(sCtx);
+                  await _saveAvatar(null);
+                },
+                child: Text('Avatarı kaldır (monogram kullan)',
+                    style: kcManrope(13, w: FontWeight.w600, color: KC.muted)),
+              ),
+            ),
+          ],
+        );
+      });
+    });
+  }
+
+  Future<void> _saveAvatar(String? url) async {
+    final auth = AuthController.instance;
+    final uid = auth.userId;
+    if (uid == null) return;
+    try {
+      await Supabase.instance.client
+          .from('profiles')
+          .update({'avatar_url': url})
+          .eq('id', uid);
+      await auth.loadProfile();
+      if (!mounted) return;
+      setState(() {});
+      KCContext.instance.toast(url == null ? 'Avatar kaldırıldı' : '🎭 Avatarın güncellendi');
+    } catch (_) {
+      KCContext.instance.toast('Avatar kaydedilemedi');
+    }
   }
 
   void _nicknameSheet(BuildContext context) {

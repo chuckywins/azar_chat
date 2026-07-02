@@ -97,7 +97,7 @@ class Room {
     const preview = this.memberIds.slice(0, 4)
       .map((id) => peers.get(id))
       .filter(Boolean)
-      .map((p) => ({ id: p.id, userId: p.userId, name: p.name }));
+      .map((p) => ({ id: p.id, userId: p.userId, name: p.name, avatarUrl: p.avatarUrl }));
     return {
       id: this.id, title: this.title, topic: this.topic,
       count: this.memberIds.length, cap: ROOM_CAP,
@@ -127,6 +127,7 @@ class Peer {
     this.name = 'Misafir';
     this.role = 'user';                      // profiles.role — 'admin' shows a tag
     this.isVip = false;
+    this.avatarUrl = null;                   // profiles.avatar_url (DiceBear etc.)
     this.nameLocked = false;                 // true once profile nickname is authoritative
     this.gender = 'X';
     this.peerGender = 'any';
@@ -155,6 +156,7 @@ class Peer {
       id: this.id, userId: this.userId,
       name: this.name, gender: this.gender,
       country: this.country,
+      avatarUrl: this.avatarUrl,
       isAdmin: this.role === 'admin',
     };
   }
@@ -267,6 +269,9 @@ async function fetchSignalingProfile(peer) {
     if (data && typeof data === 'object') {
       if (typeof data.role === 'string') peer.role = data.role;
       peer.isVip = data.vip === true;
+      if (typeof data.avatar_url === 'string' && data.avatar_url.trim()) {
+        peer.avatarUrl = data.avatar_url.trim().slice(0, 300);
+      }
       if (typeof data.nickname === 'string' && data.nickname.trim()) {
         peer.name = data.nickname.trim().slice(0, 40);
         peer.nameLocked = true;

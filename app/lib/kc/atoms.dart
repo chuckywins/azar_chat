@@ -375,6 +375,8 @@ class KCAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final initial = user.name.isNotEmpty ? user.name.substring(0, 1) : '?';
+    final monogram = Text(initial,
+        style: kcSora(size * 0.40, w: FontWeight.w600, color: Colors.white, height: 1, letter: 0.3));
     return SizedBox(
       width: size, height: size,
       child: Stack(
@@ -393,9 +395,15 @@ class KCAvatar extends StatelessWidget {
                       spreadRadius: (size * 0.05).clamp(2, 6))]
                   : null,
             ),
+            clipBehavior: Clip.antiAlias,
             alignment: Alignment.center,
-            child: Text(initial,
-              style: kcSora(size * 0.40, w: FontWeight.w600, color: Colors.white, height: 1, letter: 0.3)),
+            child: user.avatarUrl == null
+                ? monogram
+                : Image.network(
+                    user.avatarUrl!,
+                    width: size, height: size, fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => monogram,
+                  ),
           ),
           if (online)
             Positioned(
@@ -463,8 +471,25 @@ class KCVideoFeed extends StatelessWidget {
               ),
             ),
           ),
-          // big initial
+          // big initial — or the user's cartoon avatar when set
           LayoutBuilder(builder: (_, c) {
+            if (user.avatarUrl != null) {
+              final d = (c.maxHeight * 0.58).clamp(36.0, 200.0);
+              return Align(
+                alignment: const Alignment(0, -0.18),
+                child: ClipOval(
+                  child: Image.network(
+                    user.avatarUrl!,
+                    width: d, height: d, fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Text(
+                        user.name.isNotEmpty ? user.name.substring(0, 1) : '?',
+                        style: GoogleFonts.sora(fontSize: (c.maxHeight * 0.42).clamp(18, 120),
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white.withValues(alpha: 0.92))),
+                  ),
+                ),
+              );
+            }
             final s = c.maxHeight * (self ? 0.22 : 0.42);
             return Align(
               alignment: const Alignment(0, -0.18),
